@@ -3,6 +3,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Data:
+src/data/CVPR20-TwoShotBRDFAndShapeDataset.zip
+src/data/CVPR20-TwoShotBRDFAndShapeDataset/
+
 # C extensions
 *.so
 
