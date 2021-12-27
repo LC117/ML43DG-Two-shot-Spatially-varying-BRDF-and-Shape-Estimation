@@ -11,6 +11,7 @@ class PathHandler:
         """
         data_dir = self.check_path(self.root_dir / "data")
         model_dir = self.check_path(self.root_dir / "model")
+        notebooks_dir = self.check_path(self.root_dir / "notebooks")
     
     
     @staticmethod
