@@ -75,6 +75,8 @@ def load_rgb(path : Path):
     """
     image_ = Image.open(str(path))
     img = np.array(image_.getdata(), dtype=np.float32)
+    img = img.reshape((256, 256, -1))
+    img = img / 255.0
     return img
 
 def load_mono(path : Path, ch=0):
@@ -91,5 +93,6 @@ def load_mono(path : Path, ch=0):
     -------
     channel : channel in float32 format
     """
-    channel = load_rgb(path)[ch]
+    channel = load_rgb(path)
+    channel = channel[..., ch]
     return channel
