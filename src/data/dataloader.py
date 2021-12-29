@@ -45,16 +45,17 @@ class TwoShotBrdfData(torch.utils.data.Dataset):
         :return: a dictionary of brdf data
         """
         item = self._gen_path(index)
+
         return {
-            "cam1" : oexr_load_rgb(item / "cam1_emv.exr"),
-            "flash" : oexr_load_rgb(item / "cam1_flash.exr"),
-            "cam2" : oexr_load_rgb(item / "cam2.exr"),
-            "depth" : oexr_load_mono(item / "depth.exr"),
-            "diffuse" : load_rgb(item / "diffuse.png"),
-            "mask" : load_mono(item / "mask.png"),
-            "normal" : oexr_load_rgb(item / "normal.exr"),
-            "roughness" : load_mono(item / "roughness.png"),
-            "specular" : load_mono(item / "specular.png")
+            "cam1" :        readEXR(item / "cam1_env.exr")[0],
+            "flash" :       readEXR(item / "cam1_flash.exr")[0],
+            "cam2" :        readEXR(item / "cam2.exr")[0],
+            "depth" :       readEXR(item / "depth.exr")[1],
+            "diffuse" :     load_rgb(item / "diffuse.png"),
+            "mask" :        load_mono(item / "mask.png"),
+            "normal" :      readEXR(item / "normal.exr")[0],
+            "roughness" :   load_mono(item / "roughness.png"),
+            "specular" :    load_mono(item / "specular.png")
         }
 
     def __len__(self):
@@ -71,8 +72,8 @@ class TwoShotBrdfData(torch.utils.data.Dataset):
         s_idx_, e_idx_, n = self.items
         fdr_idx_ = s_idx_ + int(index / n)
         itm_idx_ = index % n
-        fdr_ = ((4 - fdr_idx_ / 10) * "0") + fdr_idx_
-        itm_ = ((2 - itm_idx_ / 10) * "0") + itm_idx_
+        fdr_ = ((4 - int(fdr_idx_ / 10)) * "0") + str(fdr_idx_)
+        itm_ = ((2 - int(itm_idx_ / 10)) * "0") + str(itm_idx_)
         return path_manager.data_dir / self.prefix / fdr_ / itm_
 
     @staticmethod

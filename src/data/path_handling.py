@@ -2,15 +2,13 @@ from pathlib import Path
 
 
 class PathHandler:
-    
-    root_dir = Path(__file__).resolve().parent
-    
     def __init__(self) -> None:
         """
         Here all the paths that are relevant will be added:
         """
-        data_dir = self.check_path(self.root_dir / "data")
-        model_dir = self.check_path(self.root_dir / "model")
+        self.root_dir = Path(__file__).resolve().parent.parent
+        self.data_dir = self.check_path(self.root_dir / "data")
+        self.model_dir = self.check_path(self.root_dir / "model")
     
     
     @staticmethod
@@ -26,7 +24,7 @@ class PathHandler:
         Returns:
             path (Path): input path
         """
-        if path.exist():
+        if path.exists():
             return path
         raise Exception(f"Path: \"{str(path)}\" does not exist!")
     
