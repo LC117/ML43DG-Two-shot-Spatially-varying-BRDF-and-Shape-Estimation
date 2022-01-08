@@ -89,6 +89,7 @@ class IlluminationNetwork(pl.LightningModule):
             ),
             nn.Sigmoid()          
         )
+        return
 
 
     def forward(self, x):
