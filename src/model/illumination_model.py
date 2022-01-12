@@ -1,5 +1,6 @@
 import pytorch_lightning as pl
 import torch 
+import torch.nn.functional as F
 import numpy as np
 from torch.nn.modules.activation import Sigmoid
 from torch.nn.modules.conv import Conv2d
@@ -8,26 +9,22 @@ from torch.nn.modules.flatten import Flatten
 from torch.nn.modules.linear import Linear
 import util.sg_utils as sg 
 
+
 from torch import nn
 from math import log2
 from util.common_layers import INReLU
 
 MAX_VAL = 2
 
-"""[summary]
-
-Returns:
-    [type]: [description]
-    
+"""
 Notes:
-    -> check pytorch_lightning "configure_shared_models"
+    -> maybe interesting: pytorch_lightning "configure_shared_models"
 """
 
 class IlluminationNetwork(pl.LightningModule):
-    """ Pytorch Implementation of: https://github.com/NVlabs/two-shot-brdf-shape/blob/352201b66bfa5cd5e25111451a6583a3e7d499f0/models/illumination_network.py
-
-    Args:
-        pl ([type]): [description]
+    """ 
+    Pytorch Implementation of: 
+    https://github.com/NVlabs/two-shot-brdf-shape/blob/352201b66bfa5cd5e25111451a6583a3e7d499f0/models/illumination_network.py
     """
     def __init__(self, imgSize: int = 256, base_nf: int = 16, num_sgs: int = 24):
         super().__init__()
@@ -36,6 +33,7 @@ class IlluminationNetwork(pl.LightningModule):
         self.num_sgs = num_sgs # spherical gaussian
         self.axis_sharpness = torch.tensor(sg.setup_axis_sharpness(num_sgs), dtype=np.float32)
         
+        # env_net:
         # Define model:
         layers_needed = int(log2(256) - 2) # 256 = cam1.shape[1].value
 
@@ -89,6 +87,9 @@ class IlluminationNetwork(pl.LightningModule):
             ),
             nn.Sigmoid()          
         )
+        
+        # predictions:
+        # reshape will be performed in forward
         return
 
 
@@ -96,13 +97,17 @@ class IlluminationNetwork(pl.LightningModule):
         cam1, cam2, mask, normal, depth = x
         x = torch.cat([cam1, cam2, mask[:, :, :, 0:1], normal, depth], dim=-1) # shape: (None, 256, 256, 11) = (None, 256, 256, 3+3+1+3+1)
         
-        # Feed trough Network:
+        # Feed trough Network ():
         for layer in self.enc_conv2d_list:
             x = layer(x)
         x = self.env_map(x)
-        
         # Reshape result
-        x = torch.view(x * MAX_VAL, [-1, self.num_sgs, 3])
+        # predictions:
+        sgs = torch.view(x * MAX_VAL, [-1, self.num_sgs, 3])
+        
+        # sgs_prep:
+        # done in training step -> maybe here?
+        
         return x
     
     def configure_optimizers(self):
@@ -120,34 +125,29 @@ class IlluminationNetwork(pl.LightningModule):
         # Perform a forward pass on the network with inputs
         out = self.forward(images)
         
+        # sgs_prep:
         batch_size = batch.shape[0]
-        
         axis_sharpness = torch.tile(self.axis_sharpness[None, ...], torch.stack([batch_size, 1, 1]))
         # axis_sharpness = tf.tile(tf.expand_dims(self.axis_sharpness, 0), tf.stack([batch_size, 1, 1]))  # add batch dim
-        
         sgs_joined = torch.cat([out, axis_sharpness], dim=-1)    
         #     sgs_joined = tf.concat([sgs, axis_sharpness], -1, name="sgs")
-        
         sgs_targets = torch.clip(targets, min=0.0, max=MAX_VAL)
         #     if self.training:
         #         sgs_gt = tf.clip_by_value(sgs_gt, 0.0, MAX_VAL)
-        
         sgs_targets_joined = torch.cat([sgs_targets, axis_sharpness], dim=-1)
         #         sgs_gt_joined = tf.concat([sgs_gt, axis_sharpness], -1, name="sgs_gt")
         
+        # loss:
+            # sgs: 
         sgs_loss = torch.mean(torch.nn.MSELoss(sgs_joined, sgs_targets_joined))
-        
-        # with tf.variable_scope("loss"):
-        #     with tf.variable_scope("sgs"):
         #         print("SGS Loss shapes (gt, pred):", sgs_gt.shape, sgs.shape)
         #         sgs_loss = tf.reduce_mean(l2_loss(sgs_gt, sgs), name="sgs_loss")
-        
-        
         #         print("sgs_loss", sgs_loss.shape)
         #         add_moving_summary(sgs_loss)
         #         tf.losses.add_loss(sgs_loss, tf.GraphKeys.LOSSES)
 
-        # with tf.variable_scope("viz"):
+        # viz:
+        
         #     renderer = rl.RenderingLayer(60, 0.7, tf.TensorShape([None, 256, 256, 3]))
         #     sg_output = tf.zeros([batch_size, 256, 512, 3])
         #     renderer.visualize_sgs(sgs_joined, sg_output)

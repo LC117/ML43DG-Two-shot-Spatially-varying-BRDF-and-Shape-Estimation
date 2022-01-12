@@ -20,7 +20,7 @@ import itertools
 
 import numpy as np
 from six.moves import range  # pylint: disable=redefined-builtin
-from tensorflow.python.keras import backend
+# from tensorflow.python.keras import backend
 
 
 def convert_data_format(data_format, ndim):
@@ -199,7 +199,7 @@ def normalize_data_format(value):
     Verifies that the passed value.lower() is either {"channels_first", "channels_last"} and returns it. 
     """
     if value is None:
-        value = backend.image_data_format()
+        value = "channels_first"
     data_format = value.lower()
     if data_format not in {"channels_first", "channels_last"}:
         raise ValueError(
