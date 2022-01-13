@@ -30,14 +30,16 @@ class TwoShotBrdfData(Dataset):
         "overfit" :     "CVPR20TwoShotBRDFAndShapeDataset/overfit/"
     }
     
-    def __init__(self, split):
+    def __init__(self, split, mode="all"):
         """
         :param split: one of 'train', 'val', 'test' or 'overfit' - for training, validation or overfitting split
+        :param mode: one of 'shape', 'illumination', 'all' - We do not need to load all the data for training the first two networks
         """
         super().__init__()
         assert split in ["train", "val", "overfit", "test"]
         self.items = TwoShotBrdfData.items_subsets[split]
         self.prefix = TwoShotBrdfData.items_prefixes[split]
+        self.mode = mode
 
     def __getitem__(self, index):
         """
@@ -46,18 +48,26 @@ class TwoShotBrdfData(Dataset):
         :return: a dictionary of brdf data
         """
         item = self._gen_path(index)
-
-        return {
-            "cam1" :        readEXR(item / "cam1_env.exr")[0],
-            "flash" :       readEXR(item / "cam1_flash.exr")[0],
-            "cam2" :        readEXR(item / "cam2.exr")[0],
-            "depth" :       readEXR(item / "depth.exr")[1],
-            "diffuse" :     load_rgb(item / "diffuse.png"),
-            "mask" :        load_mono(item / "mask.png"),
-            "normal" :      readEXR(item / "normal.exr")[0],
-            "roughness" :   load_mono(item / "roughness.png"),
-            "specular" :    load_mono(item / "specular.png")
-        }
+        res = {}
+        if self.mode in ["shape", "illumination", "all"]:
+            res = {
+                "cam1" :        readEXR(item / "cam1_env.exr")[0],
+                "cam2" :        readEXR(item / "cam2.exr")[0],
+                "flash" :       readEXR(item / "cam1_flash.exr")[0],
+                "mask" :        load_mono(item / "mask.png")
+            }
+        if self.mode in ["illumination", "all"]:
+            res.update({
+                "depth" :       readEXR(item / "depth.exr")[1],
+                "normal" :      readEXR(item / "normal.exr")[0]
+            })
+        if self.mode == "all":
+            res.update({
+                "diffuse" :     load_rgb(item / "diffuse.png"),
+                "roughness" :   load_mono(item / "roughness.png"),
+                "specular" :    load_mono(item / "specular.png")
+            })
+        return res
 
     def __len__(self):
         """
@@ -83,4 +93,15 @@ class TwoShotBrdfData(Dataset):
         Utility method for moving all elements of the batch to a device
         :return: None, modifies batch inplace
         """
-        pass
+        batch["cam1"].to(device)
+        batch["cam2"].to(device)
+        batch["flash"].to(device)
+        batch["mask"].to(device)
+        if "depth" in batch.keys():
+            batch["depth"].to(device)
+            batch["normal"].to(device)
+        if "diffuse" in batch.keys():
+            batch["diffuse"].to(device)
+            batch["roughness"].to(device)
+            batch["specular"].to(device)
+
