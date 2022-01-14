@@ -2,11 +2,10 @@ import pytorch_lightning as pl
 import torch 
 import torch.nn.functional as F
 import numpy as np
-from torch.nn.modules.activation import Sigmoid
 from torch.nn.modules.conv import Conv2d
-from torch.nn.modules.dropout import Dropout
-from torch.nn.modules.flatten import Flatten
-from torch.nn.modules.linear import Linear
+from torch.nn.modules.conv import ConvTranspose2d
+from torch.nn.modules.pooling import MaxPool2d
+from torch.nn.modules.activation import ReLU
 import util.sg_utils as sg 
 
 
@@ -62,4 +61,18 @@ class SVBRDF_Network(pl.LightningModule):
         self.model = network_architecture()
 
     def network_architecture(self):
-        return None
+        layers_needed = int(log2(self.imgSize) - 2)
+        model = {}
+        chn = 3
+        for i in range(layers_needed):
+            prev_chn = chn
+            chn = min(self.base_nf * (2 ** i), 512)
+            model["enc.conv{i}"] = Conv2d(
+                prev_chn, 
+                chn, 
+                4,
+                stride = 2
+            )
+            model["enc.maxpool{i}"] = MaxPool2d(2)
+        model["ReLU"] = ReLU()
+        return model
