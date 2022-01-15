@@ -6,6 +6,7 @@ from torch.nn.modules.conv import Conv2d
 from torch.nn.modules.conv import ConvTranspose2d
 from torch.nn.modules.pooling import MaxPool2d
 from torch.nn.modules.activation import ReLU
+from torch.nn.modules.activation import Sigmoid
 import util.sg_utils as sg 
 
 
@@ -63,16 +64,74 @@ class SVBRDF_Network(pl.LightningModule):
     def network_architecture(self):
         layers_needed = int(log2(self.imgSize) - 2)
         model = {}
-        chn = 3
+
+        out_channels = 11
+        skip_dims = []
         for i in range(layers_needed):
-            prev_chn = chn
-            chn = min(self.base_nf * (2 ** i), 512)
+            skip_dims.append(out_channels)
+            in_channels = out_channels
+            out_channels = min(self.base_nf * (2 ** i), 512)
             model["enc.conv{i}"] = Conv2d(
-                prev_chn, 
-                chn, 
+                in_channels, 
+                out_channels, 
                 4,
                 stride = 2
             )
-            model["enc.maxpool{i}"] = MaxPool2d(2)
-        model["ReLU"] = ReLU()
+
+        for i in range(layers_needed):
+            inv_i = layers_needed - i
+            in_channels = out_channels
+            out_channels = min(self.base_nf * (2 ** (inv_i - 1)), 512)
+            model["dec.tconv{i}"] = ConvTranspose2d(
+                in_channels, 
+                out_channels, 
+                4,
+                stride = 2
+            )
+            model["dec.conv{i}"] = Conv2d(
+                out_channels + skip_dims[inv_i - 1], 
+                out_channels, 
+                3
+            )
+        model["activation"] = ReLU()
+
+        in_channels = out_channels
+        out_channels = 7
+        model["output.conv"] = Conv2d(
+            in_channels,
+            out_channels,
+            5
+        )
+        model["output.activation"] = Sigmoid()
+
         return model
+
+def forward(self, x):
+        cam1, cam2, mask, normal, depth = x
+        x = torch.cat([cam1, cam2, mask[:, :, :, 0:1], normal, depth], dim=-1) # shape: (None, 256, 256, 11) = (None, 256, 256, 3+3+1+3+1)
+        
+        model = self.model
+        n_layers = int(log2(self.imgSize) - 2)
+        skips = []
+        
+        # Encoding
+        for i in range(n_layers):
+            skips.append(x.clone())
+            x = model["enc.conv{i}"](x)
+            x = model["activation"](x)
+        
+        # Deconding
+        for i in range(n_layers):
+            inv_i = layers_needed - i
+            x = model["dec.tconv{i}"](x)
+            x = model["activation"](x)
+
+            x = torch.cat((x, skips[inv_i - 1]))
+
+            x = model["dec.conv{i}"](x)
+            x = model["activation"](x)
+        
+        x = model["output.conv"](x)
+        x = model["output.activation"](x)
+
+        return x # BRDF Predictions
