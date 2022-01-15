@@ -6,7 +6,7 @@ class PathHandler:
         """
         Here all the paths that are relevant will be added:
         """
-        self.root_dir = Path(__file__).resolve().parent.parent
+        self.root_dir = Path(__file__).resolve().parent.parent # PosixPath('.../ML43DG-Two-shot-Spatially-varying-BRDF-and-Shape-Estimation/src')
         self.data_dir = self.check_path(self.root_dir / "data")
         self.model_dir = self.check_path(self.root_dir / "model")
     

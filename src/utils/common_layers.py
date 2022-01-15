@@ -1,15 +1,16 @@
 import torch
 from torch import nn
 
-def INReLU():
+def INReLU(num_features):
     """Shorthand for InstaceNorm + Relu
 
     Returns:
         [type]: [description]
     """
     return torch.nn.Sequential(
-        nn.InstanceNorm2d(10, eps=1e-5, affine=True),
-        nn.ReLU())
+        nn.InstanceNorm2d(num_features, eps=1e-5, affine=True),
+        nn.ReLU()
+    )
     
 # -----------------------------------------------------------------------
 # Copyright (c) 2020, NVIDIA Corporation. All rights reserved.
