@@ -25,13 +25,10 @@ summary_writer = None # instantiate only if necessary
 # import tensorflow as tf
 # from tensorflow.python.framework import tensor_shape
 
-import utils.common_layers as cl
-import utils.layer_helper as layer_helper
-from utils.common_layers import (
-    gamma_to_linear,
+import src.utils.common_layers as cl
+import src.utils.layer_helper as layer_helper
+from src.utils.common_layers import (
     isclose,
-    linear_to_gamma,
-    mix,
     safe_sqrt,
     saturate,
     srgb_to_linear,

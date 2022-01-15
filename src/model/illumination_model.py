@@ -1,20 +1,16 @@
-from json.tool import main
-import pytorch_lightning as pl
 import torch 
-import torch.nn.functional as F
 import numpy as np
-from torch.nn.modules.activation import Sigmoid
-from torch.nn.modules.conv import Conv2d
-from torch.nn.modules.dropout import Dropout
-from torch.nn.modules.flatten import Flatten
-from torch.nn.modules.linear import Linear
-import utils.sg_utils as sg 
+import pytorch_lightning as pl
 
-
+import torch.nn.functional as F
 from torch import nn
 from math import log2
-from utils.common_layers import INReLU
-import utils.rendering_layer as rl
+
+import src.utils.rendering_layer as rl
+import src.utils.sg_utils as sg 
+from src.data.dataloader_lightning import TwoShotBrdfDataLightning
+from src.utils.common_layers import INReLU
+
 
 MAX_VAL = 2
 
@@ -33,7 +29,7 @@ class IlluminationNetwork(pl.LightningModule):
         self.imgSize = imgSize
         self.base_nf = base_nf
         self.num_sgs = num_sgs # spherical gaussian
-        self.axis_sharpness = torch.tensor(sg.setup_axis_sharpness(num_sgs), dtype=np.float32)
+        self.axis_sharpness = torch.tensor(sg.setup_axis_sharpness(num_sgs), dtype=torch.float32)
         
         # env_net:
         # Define model:
@@ -50,7 +46,7 @@ class IlluminationNetwork(pl.LightningModule):
                     out_channels,
                     kernel_size=4,
                     stride=2,
-                    padding='same'
+                    #padding='same' TODO
                 )
             )
             enc_conv2d_list.append(INReLU())
@@ -64,7 +60,7 @@ class IlluminationNetwork(pl.LightningModule):
         self.env_map = nn.Sequential(
             nn.Conv2d(
                 in_channels=out_channels,
-                out_channels=256
+                out_channels=256,
                 kernel_size=3,
                 stride=2
             ),
@@ -78,14 +74,14 @@ class IlluminationNetwork(pl.LightningModule):
             nn.ReLU(),
             nn.Flatten(),
             nn.Linear(
-                in_channels=512,
-                out_channels=256
+                in_features=512,
+                out_features=256
             ),
             nn.ReLU(),
             nn.Dropout(p=0.75),
             nn.Linear(
-                in_channels=256,
-                out_channels=outputSize
+                in_features=256,
+                out_features=outputSize
             ),
             nn.Sigmoid(),          
         )
@@ -119,7 +115,8 @@ class IlluminationNetwork(pl.LightningModule):
         model_params = list(self.enc_conv2d_list.parameters()) + list(self.env_map.parameters())
         optimizer = torch.optim.Adam(model_params, lr=0.0002, betas=(0.5, 0.999))
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.trainer.max_epochs // 2, gamma=0.5)
-        return [optimizer], [scheduler]
+        # return [optimizer], [scheduler]
+        return scheduler
     
     def general_step(self, batch, batch_idx):
         images, targets = batch
@@ -180,15 +177,21 @@ class IlluminationNetwork(pl.LightningModule):
     
     
 if __name__ == "__main__":
-    # Training
+    # Training:
+    overfit = 1
+    
     model = IlluminationNetwork()
     
     trainer = pl.Trainer(
-        weights_summary=model.parameters(),
+        weights_summary="full",
         profiler=True,
         max_epochs=1,
         progress_bar_refresh_rate=25, # to prevent notebook crashes in Google Colab environments,
-        gpus=1 # Use GPU if available
+        # gpus=1, # Use GPU if available
+        overfit_batches=overfit
     )
+    
+    data = TwoShotBrdfDataLightning("illumination")
+    trainer.fit(model, datamodule=data)
     
     
