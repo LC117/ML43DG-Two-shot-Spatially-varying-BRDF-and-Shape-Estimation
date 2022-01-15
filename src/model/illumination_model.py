@@ -128,33 +128,25 @@ class IlluminationNetwork(pl.LightningModule):
         # sgs_prep:
         batch_size = batch.shape[0]
         axis_sharpness = torch.tile(self.axis_sharpness[None, ...], torch.stack([batch_size, 1, 1]))
-        # axis_sharpness = tf.tile(tf.expand_dims(self.axis_sharpness, 0), tf.stack([batch_size, 1, 1]))  # add batch dim
-        sgs_joined = torch.cat([out, axis_sharpness], dim=-1)    
-        #     sgs_joined = tf.concat([sgs, axis_sharpness], -1, name="sgs")
-        sgs_targets = torch.clip(targets, min=0.0, max=MAX_VAL)
-        #     if self.training:
-        #         sgs_gt = tf.clip_by_value(sgs_gt, 0.0, MAX_VAL)
-        sgs_targets_joined = torch.cat([sgs_targets, axis_sharpness], dim=-1)
-        #         sgs_gt_joined = tf.concat([sgs_gt, axis_sharpness], -1, name="sgs_gt")
+        sgs_joined = torch.cat([out, axis_sharpness], dim=-1)
+        
+        # if self.training:
+        sgs_gt = torch.clip(targets, min=0.0, max=MAX_VAL)
+        sgs_gt_joined = torch.cat([sgs_gt, axis_sharpness], dim=-1)
         
         # loss:
             # sgs: 
-        sgs_loss = torch.mean(torch.nn.MSELoss(sgs_joined, sgs_targets_joined))
-        #         print("SGS Loss shapes (gt, pred):", sgs_gt.shape, sgs.shape)
-        #         sgs_loss = tf.reduce_mean(l2_loss(sgs_gt, sgs), name="sgs_loss")
-        #         print("sgs_loss", sgs_loss.shape)
-        #         add_moving_summary(sgs_loss)
-        #         tf.losses.add_loss(sgs_loss, tf.GraphKeys.LOSSES)
+        sgs_loss = torch.mean(torch.nn.MSELoss(sgs_joined, sgs_gt_joined))
 
         # viz:
-        
-        #     renderer = rl.RenderingLayer(60, 0.7, tf.TensorShape([None, 256, 256, 3]))
-        #     sg_output = tf.zeros([batch_size, 256, 512, 3])
-        #     renderer.visualize_sgs(sgs_joined, sg_output)
+        # TODO: Not sure if this is relevant for training, or only for logging examples to tensorboard..
+        renderer = rl.RenderingLayer(60, 0.7, tf.TensorShape([None, 256, 256, 3]))
+        sg_output = tf.zeros([batch_size, 256, 512, 3])
+        renderer.visualize_sgs(sgs_joined, sg_output)
 
-        #     if self.training:
-        #         sg_gt_output = tf.zeros_like(sg_output)
-        #         renderer.visualize_sgs(sgs_gt_joined, sg_gt_output, "sgs_gt")
+        # if self.training:
+        sg_gt_output = torch.zeros_like(sg_output)
+        renderer.visualize_sgs(sgs_gt_joined, sg_gt_output, "sgs_gt")
 
         # print(sgs_loss)
         # self.cost = tf.losses.get_total_loss(name="total_costs")
@@ -165,14 +157,7 @@ class IlluminationNetwork(pl.LightningModule):
 
         # return self.cost
         
-        
-        
-
-
-        # calculate the loss with the network predictions and ground truth targets
-        loss = F.cross_entropy(out, targets)
-        
-        return {"loss": loss}
+        return {"loss": sgs_loss}
 
     def validation_step(self, *args, **kwargs):
         return super().validation_step(*args, **kwargs)
