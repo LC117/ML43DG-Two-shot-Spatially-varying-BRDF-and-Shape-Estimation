@@ -24,7 +24,7 @@ from torch.utils.tensorboard import SummaryWriter
 summary_writer = None # instantiate only if necessary
 # import tensorflow as tf
 # from tensorflow.python.framework import tensor_shape
-import utils.rendering_layer as rl
+
 import utils.common_layers as cl
 import utils.layer_helper as layer_helper
 from utils.common_layers import (

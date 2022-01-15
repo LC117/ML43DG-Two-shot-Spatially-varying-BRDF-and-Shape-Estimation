@@ -1,3 +1,4 @@
+from json.tool import main
 import pytorch_lightning as pl
 import torch 
 import torch.nn.functional as F
@@ -7,12 +8,13 @@ from torch.nn.modules.conv import Conv2d
 from torch.nn.modules.dropout import Dropout
 from torch.nn.modules.flatten import Flatten
 from torch.nn.modules.linear import Linear
-import util.sg_utils as sg 
+import utils.sg_utils as sg 
 
 
 from torch import nn
 from math import log2
-from util.common_layers import INReLU
+from utils.common_layers import INReLU
+import utils.rendering_layer as rl
 
 MAX_VAL = 2
 
@@ -85,7 +87,7 @@ class IlluminationNetwork(pl.LightningModule):
                 in_channels=256,
                 out_channels=outputSize
             ),
-            nn.Sigmoid()          
+            nn.Sigmoid(),          
         )
         
         # predictions:
@@ -108,7 +110,7 @@ class IlluminationNetwork(pl.LightningModule):
         # sgs_prep:
         # done in training step -> maybe here?
         
-        return x
+        return sgs # sphericalGaussainsShape
     
     def configure_optimizers(self):
         # half learning rate after half of the epochs: 
@@ -119,7 +121,7 @@ class IlluminationNetwork(pl.LightningModule):
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.trainer.max_epochs // 2, gamma=0.5)
         return [optimizer], [scheduler]
     
-    def training_step(self, batch, batch_idx):
+    def general_step(self, batch, batch_idx):
         images, targets = batch
 
         # Perform a forward pass on the network with inputs
@@ -137,32 +139,56 @@ class IlluminationNetwork(pl.LightningModule):
         # loss:
             # sgs: 
         sgs_loss = torch.mean(torch.nn.MSELoss(sgs_joined, sgs_gt_joined))
+        
+        return sgs_loss
+    
+    def general_end(self, outputs, mode):
+        # average over all batches aggregated during one epoch
+        avg_loss = torch.stack([x for x in outputs]).mean()
+        return avg_loss
+    
+    def training_step(self, batch, batch_idx):
 
+        sgs_loss = self.general_step(batch, batch_idx)
+
+        # batch_size = batch.shape[0]
         # viz:
         # TODO: Not sure if this is relevant for training, or only for logging examples to tensorboard..
-        renderer = rl.RenderingLayer(60, 0.7, tf.TensorShape([None, 256, 256, 3]))
-        sg_output = tf.zeros([batch_size, 256, 512, 3])
-        renderer.visualize_sgs(sgs_joined, sg_output)
+        # renderer = rl.RenderingLayer(60, 0.7, torch.Size([batch_size, 256, 256, 3]))
+        # sg_output = torch.zeros([batch_size, 256, 512, 3])
+        # renderer.visualize_sgs(sgs_joined, sg_output)
 
         # if self.training:
-        sg_gt_output = torch.zeros_like(sg_output)
-        renderer.visualize_sgs(sgs_gt_joined, sg_gt_output, "sgs_gt")
-
-        # print(sgs_loss)
-        # self.cost = tf.losses.get_total_loss(name="total_costs")
-        # print(self.cost)
-
-        # add_moving_summary(self.cost)
-        # add_param_summary((".*/W", ["histogram"]))  # monitor W
-
-        # return self.cost
-        
+        # sg_gt_output = torch.zeros_like(sg_output)
+        # renderer.visualize_sgs(sgs_gt_joined, sg_gt_output, "sgs_gt")
+                
         return {"loss": sgs_loss}
+    
+    def training_epoch_end(self, outputs):
+        avg_loss = self.general_end(outputs)
+        self.log('train_loss', avg_loss)
+        return {'train_loss': avg_loss}
 
-    def validation_step(self, *args, **kwargs):
-        return super().validation_step(*args, **kwargs)
+    def validation_step(self, batch, batch_idx):
+        loss = self.general_step(batch, batch_idx)
+        return {'val_loss': loss}
+    
+    def validation_epoch_end(self, outputs):
+        avg_loss = self.general_end(outputs)
+        self.log('val_loss', avg_loss)
+        return {'val_loss': avg_loss}
     
     
-    def test_step():
-        pass
+if __name__ == "__main__":
+    # Training
+    model = IlluminationNetwork()
+    
+    trainer = pl.Trainer(
+        weights_summary=model.parameters(),
+        profiler=True,
+        max_epochs=1,
+        progress_bar_refresh_rate=25, # to prevent notebook crashes in Google Colab environments,
+        gpus=1 # Use GPU if available
+    )
+    
     

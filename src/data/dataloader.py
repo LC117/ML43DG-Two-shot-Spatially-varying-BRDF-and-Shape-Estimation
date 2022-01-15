@@ -4,7 +4,7 @@ import trimesh
 
 from torch.utils.data import Dataset
 from src.data.path_handling import path_manager
-from src.util.images import *
+from src.utils.images import *
 
 
 class TwoShotBrdfData(Dataset):
