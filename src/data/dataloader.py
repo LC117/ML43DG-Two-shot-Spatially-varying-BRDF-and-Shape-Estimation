@@ -33,7 +33,7 @@ class TwoShotBrdfData(Dataset):
     def __init__(self, split, mode="all"):
         """
         :param split: one of 'train', 'val', 'test' or 'overfit' - for training, validation or overfitting split
-        :param mode: one of 'shape', 'illumination', 'all' - We do not need to load all the data for training the first two networks
+        :param mode: one of 'cams', 'shape', 'all' - We do not need to load all the data for training the first two networks
         """
         super().__init__()
         assert split in ["train", "val", "overfit", "test"]
@@ -49,14 +49,14 @@ class TwoShotBrdfData(Dataset):
         """
         item = self._gen_path(index)
         res = {}
-        if self.mode in ["shape", "illumination", "all"]:
+        if self.mode in ["cams", "shape", "all"]:
             res = {
                 "cam1" :        readEXR(item / "cam1_env.exr")[0],
                 "cam2" :        readEXR(item / "cam2.exr")[0],
                 "flash" :       readEXR(item / "cam1_flash.exr")[0],
                 "mask" :        load_mono(item / "mask.png")
             }
-        if self.mode in ["illumination", "all"]:
+        if self.mode in ["shape", "all"]:
             res.update({
                 "depth" :       readEXR(item / "depth.exr")[1],
                 "normal" :      readEXR(item / "normal.exr")[0]
