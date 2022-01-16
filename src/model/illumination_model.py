@@ -89,26 +89,18 @@ class IlluminationNetwork(pl.LightningModule):
             nn.Sigmoid(),
         )
 
-        # predictions:
-        # reshape will be performed in forward
         return
 
     def forward(self, x):
         cam1, cam2, mask, normal, depth = x
 
-        x = torch.cat([cam1, cam2, mask[..., None], normal, depth[..., None]],
-                      dim=-1)  # shape: (None, 256, 256, 11) = (None, 256, 256, 3+3+1+3+1)
+        x = torch.cat([cam1, cam2, mask[..., None], normal, depth[..., None]],dim=-1)  # shape: (None, 256, 256, 11) = (None, 256, 256, 3+3+1+3+1)
         x = torch.permute(x, (0, 3, 1, 2))  # torch expects "channel_first" order
 
-        # Feed trough Network ():
         x = self.enc_conv2d_block(x)
         x = self.env_map(x)
-        # Reshape result
-        # predictions:
+        
         sgs = (x * MAX_VAL).view(-1, self.num_sgs, 3)
-
-        # sgs_prep:
-        # done in training step -> maybe here?
 
         return sgs  # sphericalGaussainsShape
 
@@ -196,7 +188,7 @@ if __name__ == "__main__":
         # gpus=1, # Use GPU if available
     )
 
-    data = TwoShotBrdfDataLightning("illumination", overfit=False)
+    data = TwoShotBrdfDataLightning(mode="illumination", overfit=True)
 
     trainer.fit(model, train_dataloaders=data)
 
