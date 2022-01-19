@@ -61,7 +61,7 @@ class TwoShotBrdfData(Dataset):
                 "depth" :       readEXR(item / "depth.exr")[1],
                 "normal" :      readEXR(item / "normal.exr")[0],
             })
-        if self.mode in ["illumination"]:
+        if self.mode in ["illumination", "all"]:
             res.update({
                 "sgs" :         np.load(item / "sgs.npy").astype(np.float32)
             })
@@ -69,8 +69,8 @@ class TwoShotBrdfData(Dataset):
             res.update({
                 "flash" :       readEXR(item / "cam1_flash.exr")[0],
                 "diffuse" :     load_rgb(item / "diffuse.png"),
-                "roughness" :   load_mono(item / "roughness.png"),
-                "specular" :    load_mono(item / "specular.png")
+                "specular" :    load_rgb(item / "specular.png"),
+                "roughness" :   load_mono(item / "roughness.png")
             })
         return res
 
@@ -105,12 +105,14 @@ class TwoShotBrdfData(Dataset):
         """
         batch["cam1"].to(device)
         batch["cam2"].to(device)
-        batch["flash"].to(device)
         batch["mask"].to(device)
         if "depth" in batch.keys():
             batch["depth"].to(device)
             batch["normal"].to(device)
-        if "diffuse" in batch.keys():
+        if "sgs" in batch.keys():
+            batch["sgs"].to(device)
+        if "flash" in batch.keys():
+            batch["flash"].to(device)
             batch["diffuse"].to(device)
             batch["roughness"].to(device)
             batch["specular"].to(device)

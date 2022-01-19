@@ -84,6 +84,7 @@ def load_rgb(path : Path):
     image_ = Image.open(str(path))
     img = np.array(image_.getdata(), dtype=np.float32)
     img = img.reshape((256, 256, -1))
+    img = img[:, :, 0:3]
     img = img / 255.0
     return img
 
