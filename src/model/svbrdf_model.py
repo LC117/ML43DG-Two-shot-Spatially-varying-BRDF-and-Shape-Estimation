@@ -1,19 +1,26 @@
+from pathlib import Path
+import sys
+path_root = Path(__file__).parents[2]
+sys.path.append(str(path_root))
+
+from math import log2
+import numpy as np
+
 import pytorch_lightning as pl
 import torch 
 import torch.nn.functional as F
-import numpy as np
 from torch.nn.modules.conv import Conv2d
 from torch.nn.modules.conv import ConvTranspose2d
 from torch.nn.modules.pooling import MaxPool2d
 from torch.nn.modules.activation import ReLU
 from torch.nn.modules.activation import Sigmoid
 from torch.nn import L1Loss
-import util.sg_utils as sg 
-
-
 from torch import nn
-from math import log2
-from util.common_layers import INReLU
+from torchvision.transforms.functional import center_crop
+
+from src.utils.common_layers import INReLU
+from src.data.dataloader_lightning import TwoShotBrdfDataLightning
+import src.utils.sg_utils as sg 
 
 class SVBRDF_Network(pl.LightningModule):
     """
@@ -40,27 +47,19 @@ class SVBRDF_Network(pl.LightningModule):
         self.fov = fov
         self.distance_to_zero = distance_to_zero
 
-        self.camera_pos = torch.from_numpy(
-            camera_pos.reshape([1, 3]), dtype=np.float32
-        )
-        self.light_pos = torch.from_numpy(
-            light_pos.reshape([1, 3]), dtype=np.float32
-        )
+        self.camera_pos = torch.from_numpy(camera_pos.reshape([1, 3]))
+        self.light_pos = torch.from_numpy(light_pos.reshape([1, 3]))
         intensity = light_intensity_lumen / (4.0 * np.pi)
         light_col = light_color * intensity
-        self.light_col = torch.from_numpy(
-            light_col.reshape([1, 3]), dtype=tf.float32
-        )
+        self.light_col = torch.from_numpy(light_col.reshape([1, 3]))
 
         self.num_sgs = num_sgs
         self.no_rendering_loss = no_rendering_loss
 
-        self.axis_sharpness = torch.from_numpy(
-            sg.setup_axis_sharpness(self.num_sgs), dtype=np.float32
-        )
+        self.axis_sharpness = torch.from_numpy(sg.setup_axis_sharpness(self.num_sgs))
 
         # Define model
-        self.model = network_architecture()
+        self.model = self.network_architecture()
 
     def network_architecture(self):
         layers_needed = int(log2(self.imgSize) - 2)
@@ -72,44 +71,50 @@ class SVBRDF_Network(pl.LightningModule):
             skip_dims.append(out_channels)
             in_channels = out_channels
             out_channels = min(self.base_nf * (2 ** i), 512)
-            model["enc.conv{i}"] = Conv2d(
+            print("enc.conv", i, ": ", in_channels, " -> ", out_channels)
+            model[f"enc.conv{i}"] = Conv2d(
                 in_channels, 
                 out_channels, 
                 4,
                 stride = 2
             )
+            model[f"enc.conv.act{i}"] = INReLU(out_channels)
 
         for i in range(layers_needed):
             inv_i = layers_needed - i
             in_channels = out_channels
             out_channels = min(self.base_nf * (2 ** (inv_i - 1)), 512)
-            model["dec.tconv{i}"] = ConvTranspose2d(
+            print("dec.tconv", i, ": ", in_channels, " -> ", out_channels)
+            model[f"dec.tconv{i}"] = ConvTranspose2d(
                 in_channels, 
                 out_channels, 
                 4,
                 stride = 2
             )
-            model["dec.conv{i}"] = Conv2d(
+            model[f"dec.tconv.act{i}"] = INReLU(out_channels)
+            print("> dec.conv", i, ": ", out_channels + skip_dims[inv_i - 1], " -> ", out_channels)
+            model[f"dec.conv{i}"] = Conv2d(
                 out_channels + skip_dims[inv_i - 1], 
                 out_channels, 
                 3
             )
-        model["activation"] = ReLU()
+            model[f"dec.conv.act{i}"] = INReLU(out_channels)
 
         in_channels = out_channels
         out_channels = 7
-        model["output.conv"] = Conv2d(
+        model[f"output.conv"] = Conv2d(
             in_channels,
             out_channels,
             5
         )
-        model["output.activation"] = Sigmoid()
+        model[f"output.activation"] = Sigmoid()
 
         return model
 
     def forward(self, x):
-        cam1, cam2, mask, normal, depth = x
-        x = torch.cat([cam1, cam2, mask[:, :, :, 0:1], normal, depth], dim=-1) # shape: (None, 256, 256, 11) = (None, 256, 256, 3+3+1+3+1)
+        cam1, cam2, mask, normal, depth, sgs = x
+        x = torch.cat([cam1, cam2, mask[:, :, :, None], normal, depth[:, :, :, None]], dim=-1)
+        x = torch.swapaxes(x, 1, 3)
         
         model = self.model
         n_layers = int(log2(self.imgSize) - 2)
@@ -118,22 +123,24 @@ class SVBRDF_Network(pl.LightningModule):
         # Encoding
         for i in range(n_layers):
             skips.append(x.clone())
-            x = model["enc.conv{i}"](x)
-            x = model["activation"](x)
-        
+            x = model[f"enc.conv{i}"](x)
+            x = model[f"enc.conv.act{i}"](x)
+
         # Deconding
         for i in range(n_layers):
-            inv_i = layers_needed - i
-            x = model["dec.tconv{i}"](x)
-            x = model["activation"](x)
+            inv_i = n_layers - i
+            x = model[f"dec.tconv{i}"](x)
+            x = model[f"dec.tconv.act{i}"](x)
 
-            x = torch.cat((x, skips[inv_i - 1]))
+            img_w, img_h = (x.shape[2], x.shape[3])
+            skip_ = center_crop(skips[inv_i - 1], (img_w, img_h))
+            x = torch.cat((x, skip_), dim=1)
 
-            x = model["dec.conv{i}"](x)
-            x = model["activation"](x)
+            x = model[f"dec.conv{i}"](x)
+            x = model[f"dec.conv.act{i}"](x)
         
-        x = model["output.conv"](x)
-        x = model["output.activation"](x)
+        x = model[f"output.conv"](x)
+        x = model[f"output.activation"](x)
 
         return x # BRDF Predictions
 
@@ -141,28 +148,39 @@ class SVBRDF_Network(pl.LightningModule):
         # half learning rate after half of the epochs: 
         # see: https://github.com/NVlabs/two-shot-brdf-shape/blob/352201b66bfa5cd5e25111451a6583a3e7d499f0/models/illumination_network.py#L238
         # and https://tensorpack.readthedocs.io/en/latest/modules/callbacks.html#tensorpack.callbacks.ScheduledHyperParamSetter
+        model = self.model
         model_params = list()
         n_layers = int(log2(self.imgSize) - 2)
         for i in range(n_layers):
-            model_params = model_params + model["enc.conv{i}"].parameters()
+            model_params = model_params + list(model[f"enc.conv{i}"].parameters())
+            model_params = model_params + list(model[f"enc.conv.act{i}"].parameters())
         for i in range(n_layers):
-            model_params = model_params + model["dec.tconv{i}"].parameters()
-            model_params = model_params + model["dec.conv{i}"].parameters()
-        model_params = model_params + model["output.conv"].parameters()
+            model_params = model_params + list(model[f"dec.tconv{i}"].parameters())
+            model_params = model_params + list(model[f"dec.tconv.act{i}"].parameters())
+            model_params = model_params + list(model[f"dec.conv{i}"].parameters())
+            model_params = model_params + list(model[f"dec.conv.act{i}"].parameters())
+        model_params = model_params + list(model[f"output.conv"].parameters())
         optimizer = torch.optim.Adam(model_params, lr=0.0002, betas=(0.5, 0.999))
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size = 100, gamma=0.5)
-        # Replace upper line later with lower line when trainer is defined!
+        step_size = self.trainer.max_epochs // 2
+        scheduler = torch.optim.lr_scheduler.StepLR(
+            optimizer,
+            step_size=step_size if step_size > 0 else 1,
+            gamma=0.5)
         #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.trainer.max_epochs // 2, gamma=0.5)
         return [optimizer], [scheduler]
 
     def general_step(self, batch, batch_idx):
-        images, targets = batch
+        #images, targets = batch
+        x = batch["cam1"], batch["cam2"], batch["mask"], batch["normal"], batch["depth"], batch["sgs"]
+        targets = batch["diffuse"], batch["roughness"], batch["specular"]
 
         # Perform a forward pass on the network with inputs
-        out = self.forward(images)
+        out = self.forward(x)
+
+        print(">>>> ", out.shape)
 
         loss_function = L1Loss()
-        loss = loss_function(out, target)
+        loss = loss_function(out, targets)
 
         # TODO Add rendering loss!
         return loss
@@ -193,5 +211,14 @@ class SVBRDF_Network(pl.LightningModule):
 
 if __name__ == "__main__":
     # Training
-    model = SVBRDF_Network()
-    # TODO Define Trainer
+    network = SVBRDF_Network()
+
+    trainer = pl.Trainer(
+        weights_summary="full",
+        max_epochs=100,
+        progress_bar_refresh_rate=25,  # to prevent notebook crashes in Google Colab environments
+        # gpus=1, # Use GPU if available
+    )
+
+    data = TwoShotBrdfDataLightning(mode="all", overfit=True)
+    trainer.fit(network, train_dataloaders=data)
