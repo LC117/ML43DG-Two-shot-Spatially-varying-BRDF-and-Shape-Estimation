@@ -69,8 +69,8 @@ class TwoShotBrdfData(Dataset):
             res.update({
                 "flash" :       readEXR(item / "cam1_flash.exr")[0],
                 "diffuse" :     load_rgb(item / "diffuse.png"),
-                "roughness" :   load_mono(item / "roughness.png"),
-                "specular" :    load_mono(item / "specular.png")
+                "specular" :    load_rgb(item / "specular.png"),
+                "roughness" :   load_mono(item / "roughness.png")
             })
         return res
 

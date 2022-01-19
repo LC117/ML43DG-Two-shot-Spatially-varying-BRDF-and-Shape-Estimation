@@ -65,6 +65,7 @@ class SVBRDF_Network(pl.LightningModule):
         layers_needed = int(log2(self.imgSize) - 2)
         model = {}
 
+        print("======================================")
         out_channels = 11
         skip_dims = []
         for i in range(layers_needed):
@@ -92,14 +93,14 @@ class SVBRDF_Network(pl.LightningModule):
                 stride = 2
             )
             model[f"dec.tconv.act{i}"] = INReLU(out_channels)
-            print("> dec.conv", i, ": ", out_channels + skip_dims[inv_i - 1], " -> ", out_channels)
+            print("-> dec.conv", i, ": ", out_channels + skip_dims[inv_i - 1], " -> ", out_channels)
             model[f"dec.conv{i}"] = Conv2d(
                 out_channels + skip_dims[inv_i - 1], 
                 out_channels, 
                 3
             )
             model[f"dec.conv.act{i}"] = INReLU(out_channels)
-
+        print("======================================")
         in_channels = out_channels
         out_channels = 7
         model[f"output.conv"] = Conv2d(
@@ -172,12 +173,12 @@ class SVBRDF_Network(pl.LightningModule):
     def general_step(self, batch, batch_idx):
         #images, targets = batch
         x = batch["cam1"], batch["cam2"], batch["mask"], batch["normal"], batch["depth"], batch["sgs"]
-        targets = batch["diffuse"], batch["roughness"], batch["specular"]
+        gt_diffuse = torch.swapaxes(batch["diffuse"], 1, 3)
+        gt_specular = torch.swapaxes(batch["specular"], 1, 3)
+        gt_roughness = torch.unsqueeze(batch["roughness"], 1)
 
         # Perform a forward pass on the network with inputs
         out = self.forward(x)
-
-        print(">>>> ", out.shape)
 
         loss_function = L1Loss()
         loss = loss_function(out, targets)
