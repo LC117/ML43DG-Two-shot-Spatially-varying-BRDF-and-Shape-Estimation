@@ -88,8 +88,13 @@ class TwoShotBrdfData(Dataset):
         s_idx_, e_idx_, n = self.items
         fdr_idx_ = s_idx_ + int(index / n)
         itm_idx_ = index % n
-        fdr_ = ((4 - int(fdr_idx_ / 10)) * "0") + str(fdr_idx_)
-        itm_ = ((2 - int(itm_idx_ / 10)) * "0") + str(itm_idx_)
+
+        # fill fdr_ with leading zeros, so that it always has 5 digits
+        fdr_ = str(fdr_idx_).zfill(5)
+        itm_ = str(itm_idx_).zfill(3)
+
+        #fdr_ = ((4 - int(fdr_idx_ / 10)) * "0") + str(fdr_idx_)
+        #itm_ = ((2 - int(itm_idx_ / 10)) * "0") + str(itm_idx_)
         return path_manager.data_dir / self.prefix / fdr_ / itm_
 
     @staticmethod

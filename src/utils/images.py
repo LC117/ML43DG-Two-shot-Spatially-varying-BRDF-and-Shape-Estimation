@@ -34,14 +34,22 @@ def readEXR(path : Path):
     isize = (dw.max.y - dw.min.y + 1, dw.max.x - dw.min.x + 1)
     
     channelData = dict()
-    
+
     # convert all channels in the image to numpy arrays
-    for c in header['channels']:
-        C = exrfile.channel(c, Imath.PixelType(Imath.PixelType.FLOAT))
-        C = np.fromstring(C, dtype=np.float32)
-        C = np.reshape(C, isize)
-        
-        channelData[c] = C
+    if 'R' in header['channels'] and 'G' in header['channels'] and 'B' in header['channels']:
+        (r, g, b) = exrfile.channels("RGB", Imath.PixelType(Imath.PixelType.FLOAT))
+        rgb_dict = {'R': r, 'G': g, 'B': b}
+        for channel in rgb_dict:
+            channelData[channel] = np.frombuffer(rgb_dict[channel], dtype=np.float32)
+            channelData[channel] = channelData[channel].reshape(isize)  # [::-1]
+    else:
+        # convert all channels in the image to numpy arrays
+        for c in header['channels']:
+            C = exrfile.channel(c, Imath.PixelType(Imath.PixelType.FLOAT))
+            C = np.fromstring(C, dtype=np.float32)
+            C = np.reshape(C, isize)
+
+            channelData[c] = C
     
     colorChannels = ['R', 'G', 'B', 'A'] if 'A' in header['channels'] else ['R', 'G', 'B']
     if not 'R' in header['channels'] or not 'G' in header['channels'] or not 'B' in header['channels']:
