@@ -164,7 +164,7 @@ class ShapeNetwork(pl.LightningModule):
         if len(x.shape) == 4:
             _mask = mask.clone()
             _mask.unsqueeze_(1)
-        x = x * _mask
+        x = x * _mask + (1 - _mask) * torch.ones_like(x)
 
         #x = self.enc_conv2d_block(x)
         #x = self.env_map(x)
@@ -180,12 +180,13 @@ class ShapeNetwork(pl.LightningModule):
     def masked_loss(self, pred, target, mask, loss, channel_first=True):
         # make a copy of the mask
         _mask = mask
-        if len(pred.shape) == 4:
-            _mask = mask.clone()
-            if channel_first:
-                _mask.unsqueeze_(1)
-            else:
-                _mask.unsqueeze_(-1)
+        #if len(pred.shape) == 4:
+        #    _mask = mask.clone()
+        #    if channel_first:
+        #        _mask.unsqueeze_(1)
+        #    else:
+        #        _mask.unsqueeze_(-1)
+        #print("mask shape", _mask.shape, "pred shape", pred.shape)
         pred = pred * _mask
         target = target * _mask
         loss = loss(pred, target)
@@ -210,21 +211,22 @@ class ShapeNetwork(pl.LightningModule):
     def general_step(self, batch, batch_idx):
         # cam1, cam2, mask
         mask = batch["mask"]
+        mask3 = mask.clone().unsqueeze_(-1)
         x = batch["cam1"], batch["cam2"], batch["mask"]
         # targets = batch["normal"], batch["depth"].reshape(-1, self.imgSize, self.imgSize, 1)
         normal_gt, depth_gt = batch["normal"], batch["depth"]#.unsqueeze(-1)
-        #targets = normal_gt, depth_gt
 
         # Perform a forward pass on the network with inputs
         out = self.forward(x)
 
-        # targets_joined = torch.cat(targets, dim=-1)
+        #targets = normal_gt, depth_gt.unsqueeze(-1)
+        #targets_joined = torch.cat(targets, dim=-1)
 
         depth_l2_loss = self.masked_loss(out[..., 0], depth_gt, mask, torch.nn.MSELoss())
         # calulate the angle between the normal and the predicted normal
         #normal_angle_loss = 1 - torch.nn.CosineSimilarity()(out[..., 1:], targets_joined[..., 1:])
         #normal_angle_loss = torch.nn.L1Loss()(targets_joined[..., 0] * 2 - 1, out[..., 0] * 2 - 1)
-        normal_angle_loss = self.masked_loss(depth_gt * 2 - 1, out[..., 0] * 2 - 1, mask, torch.nn.L1Loss())
+        normal_angle_loss = self.masked_loss(out[..., 1:] * 2 - 1, normal_gt * 2 - 1, mask3, torch.nn.L1Loss())
         #normal_l2_loss = torch.nn.MSELoss()(out[..., 1:], batch["normal"])
         #normals_depth_consistency_loss =
 
@@ -263,7 +265,7 @@ class ShapeNetwork(pl.LightningModule):
         n = n * 0.5 + 0.5
 
         #consistency_loss = torch.nn.L1Loss()(n, out[..., 1:].reshape(-1, 3, self.imgSize, self.imgSize))
-        consistency_loss = self.masked_loss(n, out[..., 1:].reshape(-1, 3, self.imgSize, self.imgSize), mask, torch.nn.L1Loss())
+        consistency_loss = self.masked_loss(out[..., 1:], n.permute((0, 2, 3, 1)), mask3, torch.nn.L1Loss())
 
         shape_loss = depth_l2_loss + normal_angle_loss + self.consistency_loss * consistency_loss
 
@@ -325,14 +327,14 @@ if __name__ == "__main__":
 
     trainer = pl.Trainer(
         weights_summary="full",
-        max_epochs=10,
+        max_epochs=200,
         progress_bar_refresh_rate=25,  # to prevent notebook crashes in Google Colab environments
-        # gpus=1,  # Use GPU if available
+        gpus=1,  # Use GPU if available
         profiler="simple",
-        # precision=16,
+        #precision=16,
     )
 
-    data = TwoShotBrdfDataLightning(mode="shape", overfit=True, num_workers=4, batch_size=16)
+    data = TwoShotBrdfDataLightning(mode="shape", overfit=True, num_workers=2, batch_size=5, persistent_workers=True, pin_memory=True)
 
     trainer.fit(model, train_dataloaders=data)
 
