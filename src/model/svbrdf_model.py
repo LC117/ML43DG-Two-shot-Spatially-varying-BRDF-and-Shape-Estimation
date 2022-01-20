@@ -75,6 +75,9 @@ class SVBRDF_Network(pl.LightningModule):
         pad_right = pad_along_width - pad_left
         return (int(pad_top), int(pad_bottom), int(pad_left), int(pad_right))
 
+    def _masked_loss(self, loss, mask):
+        return torch.where(torch.less_equal(mask, 1e-5), torch.zeros_like(loss), loss)
+
     def network_architecture(self):
         layers_needed = int(log2(self.imgSize) - 2)
         model = {}
@@ -204,11 +207,32 @@ class SVBRDF_Network(pl.LightningModule):
         loss_diffuse = loss_function(pred_diffuse, gt_diffuse)
         loss_specular = loss_function(pred_specular, gt_specular)
         loss_roughness = loss_function(pred_roughness, gt_roughness)
-        loss = (loss_diffuse + loss_specular + loss_roughness) / 3.0
+        loss = loss_diffuse + loss_specular + loss_roughness
 
-        # TODO Add rendering loss!
+        # Rendering Loss
+        normal = batch["normal"]
+        depth = batch["depth"]
+        sgs = batch["sgs"]
+        mask = batch["mask"]
+        cam1 = batch["cam1"]
 
-        return loss
+        mask = mask[:, :, 0:1]
+        repeat = [1 for _ in range(len(mask.shape))]
+        repeat[-1] = 3
+        mask3 = torch.tile(mask, repeat)
+        batch_size = cam1.shape[0]
+
+        rendered = self.render(pred_diffuse, pred_specular, pred_roughness, normal, depth, sgs, mask3)
+
+        rerendered_log = torch.clip(torch.log(1.0 + ReLU(rendered)), 0.0, 13.0)
+        rerendered_log = torch.nan_to_num(rerendered_log)
+        loss_log = torch.clip(torch.log(1.0 + ReLU(cam1)), 0.0, 13.0)
+        loss_log = torch.nan_to_num(loss_log)
+        l1_err = L1Loss(loss_log, rerendered_log)
+        rerendered_loss = torch.mean(torch.mean(self._masked_loss(l1_err, mask3)))
+        loss += rerendered_loss
+
+        return loss / 4.0
 
     def general_end(self, outputs, mode):
         # average over all batches aggregated during one epoch
@@ -234,6 +258,7 @@ class SVBRDF_Network(pl.LightningModule):
         return {"val_loss": avg_loss}
 
     def render(self, diffuse, specular, roughness, normal, depth, sgs, mask3):
+        print("> ", diffuse.shape, " -- ", mask3.shape)
         sdiff = apply_mask(diffuse, mask3, "safe_diffuse", undefined=0.5)
         sspec = apply_mask(specular, mask3, "safe_specular", undefined=0.04)
         srogh = apply_mask(roughness, mask3[:, :, :, 0:1], "safe_roughness", undefined=0.4)
@@ -242,7 +267,7 @@ class SVBRDF_Network(pl.LightningModule):
             torch.ones_like(normal) * torch.tensor([0.5, 0.5, 1.0]),
             normal
         )
-        batch_size = torch.shape(diffuse)[0]
+        batch_size = diffuse.shape[0]
         axis_sharpness = torch.tile(
             torch.unsqueeze(self.axis_sharpness, 0), torch.stack([batch_size, 1, 1])
         )

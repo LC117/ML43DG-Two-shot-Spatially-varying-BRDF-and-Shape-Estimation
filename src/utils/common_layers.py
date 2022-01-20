@@ -46,7 +46,7 @@ def apply_mask(
     img: torch.Tensor, mask: torch.Tensor, name: str, undefined: float = 0
 ) -> torch.Tensor:
     return torch.where(
-        torch.less_equal(mask, 1e-5), torch.ones_like(img) * undefined, img, name=name
+        torch.less_equal(mask, 1e-5), torch.ones_like(img) * undefined, img
     )
 
 
