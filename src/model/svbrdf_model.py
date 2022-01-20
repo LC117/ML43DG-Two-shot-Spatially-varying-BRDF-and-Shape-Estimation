@@ -122,7 +122,8 @@ class SVBRDF_Network(pl.LightningModule):
         model[f"output.conv"] = Conv2d(
             in_channels,
             out_channels,
-            5
+            5,
+            padding = "same"
         )
         model[f"output.activation"] = Sigmoid()
 
@@ -191,33 +192,41 @@ class SVBRDF_Network(pl.LightningModule):
 
         # Perform a forward pass on the network with inputs
         out = self.forward(x)
+        pred_diffuse = out[:, 0:3]
+        pred_specular = out[:, 3:6]
+        pred_roughness = torch.unsqueeze(out[:, 6], 1)
 
         loss_function = L1Loss()
-        loss = loss_function(out, targets)
+
+        loss_diffuse = loss_function(pred_diffuse, gt_diffuse)
+        loss_specular = loss_function(pred_specular, gt_specular)
+        loss_roughness = loss_function(pred_roughness, gt_roughness)
+        loss = loss_diffuse + loss_specular + loss_roughness
 
         # TODO Add rendering loss!
+
         return loss
 
     def general_end(self, outputs, mode):
         # average over all batches aggregated during one epoch
-        avg_loss = torch.stack([x for x in outputs]).mean()
+        avg_loss = torch.stack([x[mode] for x in outputs]).mean()
         return avg_loss
     
     def training_step(self, batch, batch_idx):
         loss = self.general_step(batch, batch_idx)
-        return {"loss": sgs_loss}
+        self.log("my_loss", loss, logger=True, on_step=True, on_epoch=True)
+        return {"loss": loss}
     
     def training_epoch_end(self, outputs):
-        avg_loss = self.general_end(outputs)
+        avg_loss = self.general_end(outputs, "loss")
         self.log("train_loss", avg_loss)
-        return {"train_loss": avg_loss}
 
     def validation_step(self, batch, batch_idx):
         loss = self.general_step(batch, batch_idx)
         return {"val_loss": loss}
     
     def validation_epoch_end(self, outputs):
-        avg_loss = self.general_end(outputs)
+        avg_loss = self.general_end(outputs, "val_loss")
         self.log("val_loss", avg_loss)
         return {"val_loss": avg_loss}
 
