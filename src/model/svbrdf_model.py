@@ -18,9 +18,12 @@ from torch.nn.modules.activation import Sigmoid
 from torch.nn import L1Loss
 from torch import nn
 
-from src.utils.common_layers import INReLU
+
 from src.data.dataloader_lightning import TwoShotBrdfDataLightning
-import src.utils.sg_utils as sg 
+from src.utils.common_layers import INReLU
+import src.utils.sg_utils as sg
+from src.utils.rendering_layer import *
+from src.utils.common_layers import *
 
 class SVBRDF_Network(pl.LightningModule):
     """
@@ -201,7 +204,7 @@ class SVBRDF_Network(pl.LightningModule):
         loss_diffuse = loss_function(pred_diffuse, gt_diffuse)
         loss_specular = loss_function(pred_specular, gt_specular)
         loss_roughness = loss_function(pred_roughness, gt_roughness)
-        loss = loss_diffuse + loss_specular + loss_roughness
+        loss = (loss_diffuse + loss_specular + loss_roughness) / 3.0
 
         # TODO Add rendering loss!
 
@@ -230,6 +233,42 @@ class SVBRDF_Network(pl.LightningModule):
         self.log("val_loss", avg_loss)
         return {"val_loss": avg_loss}
 
+    def render(self, diffuse, specular, roughness, normal, depth, sgs, mask3):
+        sdiff = apply_mask(diffuse, mask3, "safe_diffuse", undefined=0.5)
+        sspec = apply_mask(specular, mask3, "safe_specular", undefined=0.04)
+        srogh = apply_mask(roughness, mask3[:, :, :, 0:1], "safe_roughness", undefined=0.4)
+        snormal = torch.where(
+            torch.less_equal(mask, 1e-5),
+            torch.ones_like(normal) * torch.tensor([0.5, 0.5, 1.0]),
+            normal
+        )
+        batch_size = torch.shape(diffuse)[0]
+        axis_sharpness = torch.tile(
+            torch.unsqueeze(self.axis_sharpness, 0), torch.stack([batch_size, 1, 1])
+        )
+        sgs_joined = torch.cat((sgs, axis_sharpness), -1)
+        renderer = RenderingLayer(
+            self.fov,
+            self.distance_to_zero,
+            torch.Size((None, self.imgSize, self.imgSize, 3)),
+        )
+
+        rerendered = renderer.call(
+                sdiff,
+                sspec,
+                srogh,
+                snormal,
+                depth,  # Depth is still in 0 - 1 range
+                mask3[:, :, :, 0:1],
+                self.camera_pos,
+                self.light_pos,
+                self.light_col,
+                sgs_joined,
+            )
+        rerendered = apply_mask(rerendered, mask3, "masked_rerender")
+        rerendered = torch.nan_to_num(rerendered)
+        return rerendered
+
 
 if __name__ == "__main__":
     # Training
@@ -242,5 +281,5 @@ if __name__ == "__main__":
         # gpus=1, # Use GPU if available
     )
 
-    data = TwoShotBrdfDataLightning(mode="all", overfit=True)
+    data = TwoShotBrdfDataLightning(mode="all", overfit=True, num_workers=4)
     trainer.fit(network, train_dataloaders=data)
