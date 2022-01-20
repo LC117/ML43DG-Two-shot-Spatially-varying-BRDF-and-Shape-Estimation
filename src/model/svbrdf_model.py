@@ -4,6 +4,7 @@ path_root = Path(__file__).parents[2]
 sys.path.append(str(path_root))
 
 from math import log2
+from math import ceil
 import numpy as np
 
 import pytorch_lightning as pl
@@ -16,7 +17,6 @@ from torch.nn.modules.activation import ReLU
 from torch.nn.modules.activation import Sigmoid
 from torch.nn import L1Loss
 from torch import nn
-from torchvision.transforms.functional import center_crop
 
 from src.utils.common_layers import INReLU
 from src.data.dataloader_lightning import TwoShotBrdfDataLightning
@@ -61,6 +61,17 @@ class SVBRDF_Network(pl.LightningModule):
         # Define model
         self.model = self.network_architecture()
 
+    def _get_same_padding(self, in_height, in_width, kernel_size, strides):
+        out_height = ceil(float(in_height) / float(strides[0]))
+        out_width  = ceil(float(in_width) / float(strides[1]))
+        pad_along_height = max((out_height - 1) * strides[0] + kernel_size[0] - in_height, 0)
+        pad_along_width = max((out_width - 1) * strides[1] + kernel_size[1] - in_width, 0)
+        pad_top = pad_along_height // 2
+        pad_bottom = pad_along_height - pad_top
+        pad_left = pad_along_width // 2
+        pad_right = pad_along_width - pad_left
+        return (int(pad_top), int(pad_bottom), int(pad_left), int(pad_right))
+
     def network_architecture(self):
         layers_needed = int(log2(self.imgSize) - 2)
         model = {}
@@ -73,10 +84,12 @@ class SVBRDF_Network(pl.LightningModule):
             in_channels = out_channels
             out_channels = min(self.base_nf * (2 ** i), 512)
             print("enc.conv", i, ": ", in_channels, " -> ", out_channels)
+            padding_ = self._get_same_padding(256 / (2 ** i), 256 / (2 ** i), (4, 4), (2, 2))
             model[f"enc.conv{i}"] = Conv2d(
                 in_channels, 
                 out_channels, 
                 4,
+                padding = padding_[0],
                 stride = 2
             )
             model[f"enc.conv.act{i}"] = INReLU(out_channels)
@@ -86,10 +99,12 @@ class SVBRDF_Network(pl.LightningModule):
             in_channels = out_channels
             out_channels = min(self.base_nf * (2 ** (inv_i - 1)), 512)
             print("dec.tconv", i, ": ", in_channels, " -> ", out_channels)
+            padding_ = self._get_same_padding(256 / (2 ** i), 256 / (2 ** (inv_i - 1)), (4, 4), (2, 2))
             model[f"dec.tconv{i}"] = ConvTranspose2d(
                 in_channels, 
                 out_channels, 
                 4,
+                padding = padding_[0],
                 stride = 2
             )
             model[f"dec.tconv.act{i}"] = INReLU(out_channels)
@@ -97,7 +112,8 @@ class SVBRDF_Network(pl.LightningModule):
             model[f"dec.conv{i}"] = Conv2d(
                 out_channels + skip_dims[inv_i - 1], 
                 out_channels, 
-                3
+                3,
+                padding = "same"
             )
             model[f"dec.conv.act{i}"] = INReLU(out_channels)
         print("======================================")
@@ -120,7 +136,7 @@ class SVBRDF_Network(pl.LightningModule):
         model = self.model
         n_layers = int(log2(self.imgSize) - 2)
         skips = []
-        
+
         # Encoding
         for i in range(n_layers):
             skips.append(x.clone())
@@ -132,11 +148,7 @@ class SVBRDF_Network(pl.LightningModule):
             inv_i = n_layers - i
             x = model[f"dec.tconv{i}"](x)
             x = model[f"dec.tconv.act{i}"](x)
-
-            img_w, img_h = (x.shape[2], x.shape[3])
-            skip_ = center_crop(skips[inv_i - 1], (img_w, img_h))
-            x = torch.cat((x, skip_), dim=1)
-
+            x = torch.cat((x, skips[inv_i - 1]), dim=1)
             x = model[f"dec.conv{i}"](x)
             x = model[f"dec.conv.act{i}"](x)
         
