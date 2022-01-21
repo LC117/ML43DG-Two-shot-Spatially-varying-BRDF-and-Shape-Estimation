@@ -50,6 +50,13 @@ def apply_mask(
     )
 
 
+def div_no_nan(x, y):
+    if y == 0:
+        return torch.zeros_like(x)
+    else:
+        return x / y
+
+
 def uncompressDepth(
     d: torch.Tensor, sigma: float = 2.5, epsilon: float = 0.7
 ) -> torch.Tensor:

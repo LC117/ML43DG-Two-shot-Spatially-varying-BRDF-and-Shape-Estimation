@@ -6,6 +6,8 @@ from torch.utils.data import Dataset
 from src.data.path_handling import path_manager
 from src.utils.images import *
 
+import pyexr
+
 
 class TwoShotBrdfData(Dataset):
     """
@@ -42,12 +44,54 @@ class TwoShotBrdfData(Dataset):
         self.prefix = TwoShotBrdfData.items_prefixes[split]
         self.mode = mode
 
+        self.storeData = split == "overfit"
+        self.data = {}
+
     def __getitem__(self, index):
         """
         PyTorch requires you to provide a getitem implementation for your dataset.
         :param index: index of the dataset sample that will be returned
         :return: a dictionary of brdf data
         """
+        if self.storeData:
+            if index in self.data:
+                return self.data[index]
+
+        item = self._gen_path(index)
+        res = {}
+        if self.mode in ["cams", "shape", "illumination", "all"]:
+            res = {
+                "cam1" :        pyexr.open(str(item) + "\\cam1_env.exr").get(),
+                "cam2" :        pyexr.open(str(item) + "\\cam2.exr").get(),
+                "mask" :        load_mono(item / "mask.png")
+            }
+        if self.mode in ["shape", "illumination", "all"]:
+            res.update({
+                "depth" :       pyexr.open(str(item) + "\\depth.exr").get()[:, :, 0],
+                "normal" :      pyexr.open(str(item) + "\\normal.exr").get(),
+            })
+        if self.mode in ["illumination", "all"]:
+            res.update({
+                "sgs" :         np.load(item / "sgs.npy").astype(np.float32)
+            })
+        if self.mode == "all":
+            res.update({
+                "flash" :       pyexr.open(str(item) + "\\cam1_flash.exr").get(),
+                "diffuse" :     load_rgb(item / "diffuse.png"),
+                "specular" :    load_rgb(item / "specular.png"),
+                "roughness" :   load_mono(item / "roughness.png")
+            })
+        if self.storeData:
+            self.data[index] = res
+        return res
+
+    """
+    def __getitem__(self, index):
+        #
+        #PyTorch requires you to provide a getitem implementation for your dataset.
+        #:param index: index of the dataset sample that will be returned
+        #:return: a dictionary of brdf data
+        
         item = self._gen_path(index)
         res = {}
         if self.mode in ["cams", "shape", "illumination", "all"]:
@@ -73,6 +117,7 @@ class TwoShotBrdfData(Dataset):
                 "roughness" :   load_mono(item / "roughness.png")
             })
         return res
+    """
 
     def __len__(self):
         """
