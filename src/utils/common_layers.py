@@ -89,7 +89,7 @@ def isclose(x: torch.Tensor, val: float, threshold: float = EPS) -> torch.Tensor
 
 
 def safe_sqrt(x: torch.Tensor) -> torch.Tensor:
-    sqrt_in = torch.nn.relu(torch.where(isclose(x, 0.0), torch.ones_like(x) * EPS, x))
+    sqrt_in = torch.relu(torch.where(isclose(x, 0.0), torch.ones_like(x) * EPS, x))
     return torch.sqrt(sqrt_in)
 
 
@@ -134,7 +134,7 @@ def get_channel_axis(data_format: str = "channels_last") -> int:
 def repeat(x: torch.Tensor, n: int, axis: int) -> torch.Tensor:
     repeat = [1 for _ in range(len(x.shape))]
     repeat[axis] = n
-
+    
     return torch.tile(x, repeat)
 
 def upsample(x, factor: int = 2):
