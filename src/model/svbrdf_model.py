@@ -18,6 +18,7 @@ from torch.nn.modules.activation import Sigmoid
 from torch.nn import L1Loss
 from torch import nn
 
+from matplotlib import pyplot as plt
 
 from src.data.dataloader_lightning import TwoShotBrdfDataLightning
 from src.utils.common_layers import INReLU
@@ -207,9 +208,9 @@ class SVBRDF_Network(pl.LightningModule):
         loss_diffuse = loss_function(pred_diffuse, gt_diffuse)
         loss_specular = loss_function(pred_specular, gt_specular)
         loss_roughness = loss_function(pred_roughness, gt_roughness)
-        loss = loss_diffuse + loss_specular + loss_roughness
 
-        #return loss / 3.0
+        #loss = (loss_diffuse + loss_specular + loss_roughness) / 3.0
+        #return loss
 
         # Rendering Loss
         mask = mask[:, :, :, None]
@@ -232,10 +233,10 @@ class SVBRDF_Network(pl.LightningModule):
         loss_log = torch.clip(torch.log(1.0 + torch.relu(cam1)), 0.0, 13.0)
         loss_log = torch.nan_to_num(loss_log)
         l1_err = loss_function(loss_log, rerendered_log)
-        rerendered_loss = torch.mean(torch.mean(self._masked_loss(l1_err, mask3)))
-        loss += rerendered_loss
+        rerendered_loss = torch.mean(self._masked_loss(l1_err, mask3))
 
-        return loss / 4.0
+        loss = (loss_diffuse + loss_specular + loss_roughness + rerendered_loss) / 4.0
+        return loss
 
     def general_end(self, outputs, mode):
         # average over all batches aggregated during one epoch
@@ -312,3 +313,34 @@ if __name__ == "__main__":
 
     data = TwoShotBrdfDataLightning(mode="all", overfit=True, num_workers=4)
     trainer.fit(network, train_dataloaders=data)
+
+    test_sample = data.train_dataloader().dataset[0]
+    cam1 = torch.unsqueeze(torch.tensor(test_sample["cam1"]), 0)
+    cam2 = torch.unsqueeze(torch.tensor(test_sample["cam2"]), 0)
+    mask = torch.unsqueeze(torch.tensor(test_sample["mask"]), 0)
+    normal = torch.unsqueeze(torch.tensor(test_sample["normal"]), 0)
+    depth = torch.unsqueeze(torch.tensor(test_sample["depth"]), 0)
+    x = cam1, cam2, mask, normal, depth
+
+    out = network.forward(x)
+    diffuse = torch.squeeze(torch.moveaxis(out[:, 0:3], 1, 3)).cpu().detach().numpy()
+    specular = torch.squeeze(torch.moveaxis(out[:, 3:6], 1, 3)).cpu().detach().numpy()
+    roughness = torch.squeeze(out[:, 6]).cpu().detach().numpy()
+    if not os.path.exists("Test_Results"):
+        os.makedirs("Test_Results")
+
+    gt_diffuse = test_sample["diffuse"]
+    gt_specular = test_sample["specular"]
+    gt_roughness = test_sample["roughness"]
+
+    # save the diffuse map as rgb using matplotlib
+    plt.imsave("Test_Results/diffuse.png", diffuse)
+    # save the specular map as rgb using matplotlib
+    plt.imsave("Test_Results/specular.png", specular)
+    # save the roughness map using matplotlib
+    plt.imsave("Test_Results/roughness.png", roughness, cmap="gray")
+
+    # save ground truth
+    plt.imsave("Test_Results/diffuse_gt.png", gt_diffuse)
+    plt.imsave("Test_Results/specular_gt.png", gt_specular)
+    plt.imsave("Test_Results/roughness_gt.png", gt_roughness, cmap="gray")
