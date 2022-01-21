@@ -44,14 +44,16 @@ class RenderingLayer(nn.Module):
         fov: int,
         distanceToZero: float,
         output_shape: torch.Size,
-        # data_format: str = "channels_last", # want to remove this -> "channel_fist" is default in pytoch 
+        #data_format: str = "channels_first" # want to remove this -> "channel_fist" is default in pytoch
+        data_format = "channels_first"
     ):
         """
         @ DONE 
         """
         self.distanceToZero = distanceToZero
         self.fov = fov
-        # self.data_format = layer_helper.normalize_data_format(data_format)    
+        # self.data_format = layer_helper.normalize_data_format(data_format)
+        self.data_format = data_format  
 
         self.build(output_shape)
 
@@ -84,7 +86,7 @@ class RenderingLayer(nn.Module):
         #     coord = chwToHwc(coord)
 
         assert coord.dtype == np.float32
-        self.base_mesh = torch.from_numpy(np.expand_dims(coord, 0), dtype=torch.float32)
+        self.base_mesh = torch.from_numpy(np.expand_dims(coord, 0))
         assert self.base_mesh.dtype == torch.float32
 
     def call(
@@ -155,7 +157,7 @@ class RenderingLayer(nn.Module):
         l = self._normalize(l_vec)
         h = self._normalize(l + v)
 
-        axis_flip = torch.constant([-1, 1, -1], dtype=torch.float32)
+        axis_flip = torch.tensor([-1, 1, -1], dtype=torch.float32)
         axis_flip = torch.reshape(axis_flip, reshapeShape)
         n = self._normalize(normal * 2.0 - 1.0) * axis_flip
 
@@ -183,7 +185,7 @@ class RenderingLayer(nn.Module):
             torch.less(self._to_vec3(ndl), EPS), torch.zeros_like(direct), direct
         )
         direct = torch.where(
-            torch.math.less(self._to_vec3(ndv), EPS), torch.zeros_like(direct), direct
+            torch.less(self._to_vec3(ndv), EPS), torch.zeros_like(direct), direct
         )
 
         # SG_light:
@@ -481,8 +483,7 @@ class RenderingLayer(nn.Module):
         output = torch.where(
             self._to_vec3(isclose(vdh * ndv, zero_vec)), shadowed, output
         )
-
-        return torch.maximum(output, 0.0)
+        return torch.maximum(output, torch.zeros(output.shape))
 
     def sg_eval(
         self,
@@ -574,7 +575,7 @@ class RenderingLayer(nn.Module):
         brdf_eval = diffuse_eval + specular_eval
 
         return torch.where(
-            self._to_vec3(torch.equal(mask, zero_vec)), shadowed, brdf_eval
+            self._to_vec3(torch.eq(mask, zero_vec)), shadowed, brdf_eval
         )
 
     def _extract_sg_components(
