@@ -13,6 +13,7 @@
 ATTENTION THE NEW PYTORCH CODE EXPECTS ALWAYS DATA FORMAT: N,C,H,W !!! 
 -> Probable reason if sth. fails !
 """
+import imp
 import os
 import sys
 from typing import Any, List, Tuple
@@ -35,8 +36,9 @@ from src.utils.common_layers import (
 )
 # from utils.dataflow_utils import apply_mask, chwToHwc, ensureSingleChannel, hwcToChw
 
-EPS = 1e-7
+from utils.common_layers import div_no_nan
 
+EPS = 1e-7
 
 class RenderingLayer(nn.Module):
     def __init__(
@@ -168,7 +170,7 @@ class RenderingLayer(nn.Module):
         vdh = saturate(self._dot(v, h))
 
         sqrLightDistance = self._dot(l_vec, l_vec)
-        light = torch.div(lc, sqrLightDistance)
+        light = div_no_nan(lc, sqrLightDistance)
 
         diff = srgb_to_linear(diffuse)
         spec = srgb_to_linear(specular)
@@ -223,7 +225,7 @@ class RenderingLayer(nn.Module):
         """
         @ DONE 
         """
-        return torch.div(2 * ndx, ndx + safe_sqrt(a2 + (1 - a2) * ndx * ndx))
+        return div_no_nan(2 * ndx, ndx + safe_sqrt(a2 + (1 - a2) * ndx * ndx))
 
     def G(self, alpha: torch.Tensor, ndl: torch.Tensor, ndv: torch.Tensor) -> torch.Tensor:
         """
@@ -243,7 +245,7 @@ class RenderingLayer(nn.Module):
         denom = (ndh * ndh) * (a2 - 1) + 1.0
         denom2 = denom * denom
 
-        return torch.div(a2, np.pi * denom2)
+        return div_no_nan(a2, np.pi * denom2)
 
     def spec(
         self,
@@ -265,7 +267,7 @@ class RenderingLayer(nn.Module):
         G = self.G(alpha, ndl, ndv)
         D = self.D(alpha, ndh)
 
-        ret = torch.div(F * G * D, 4.0 * ndl)
+        ret = div_no_nan(F * G * D, 4.0 * ndl)
 
         ret = torch.where(
             torch.less(self._to_vec3(ndh), EPS), torch.zeros_like(ret), ret
@@ -288,7 +290,7 @@ class RenderingLayer(nn.Module):
         s_amplitude, s_axis, s_sharpness = self._extract_sg_components(sg)
 
         expTerm = 1.0 - torch.exp(-2.0 * s_sharpness)
-        return 2 * np.pi * torch.div(s_amplitude, s_sharpness) * expTerm
+        return 2 * np.pi * div_no_nan(s_amplitude, s_sharpness) * expTerm
 
     def _sg_evaluate(self, sg: torch.Tensor, d: torch.Tensor) -> torch.Tensor:
         """
@@ -323,7 +325,7 @@ class RenderingLayer(nn.Module):
 
         other = 1.0 - torch.exp(-2.0 * umLength)
 
-        return torch.div(2.0 * np.pi * expo * other, umLength)
+        return div_no_nan(2.0 * np.pi * expo * other, umLength)
 
     def _sg_evaluate_diffuse(
         self, sg: torch.Tensor, diffuse: torch.Tensor, normal: torch.Tensor
@@ -342,7 +344,7 @@ class RenderingLayer(nn.Module):
             normal.shape[self._get_channel_axis()] == 3 and len(normal.shape) == 4
         )
 
-        diff = torch.div(diffuse, np.pi)
+        diff = div_no_nan(diffuse, np.pi)
 
         s_amplitude, s_axis, s_sharpness = self._extract_sg_components(sg)
 
@@ -353,7 +355,7 @@ class RenderingLayer(nn.Module):
 
         eml = torch.exp(-s_sharpness)
         em2l = eml * eml
-        rl = torch.div(1.0, s_sharpness)
+        rl = div_no_nan(1.0, s_sharpness)
 
         scale = 1.0 + 2.0 * em2l - rl
         bias = (eml - em2l) * rl - em2l
@@ -364,7 +366,7 @@ class RenderingLayer(nn.Module):
 
         n = x0 + x1
 
-        y = torch.where(torch.le(torch.abs(x0), x1), n * torch.div(n, x), mudn)
+        y = torch.where(torch.le(torch.abs(x0), x1), n * div_no_nan(n, x), mudn)
 
         res = scale * y + bias
 
@@ -387,9 +389,9 @@ class RenderingLayer(nn.Module):
 
         ret = torch.cat(
             [
-                self._to_vec3(torch.div(1.0, np.pi * a2)),
+                self._to_vec3(div_no_nan(1.0, np.pi * a2)),
                 d,
-                torch.div(2.0, a2),
+                div_no_nan(2.0, a2),
             ],
             self._get_channel_axis(),
         )
@@ -410,7 +412,7 @@ class RenderingLayer(nn.Module):
             [
                 ndf_amplitude,
                 self._reflect(-v, ndf_axis),
-                torch.div(
+                div_no_nan(
                     ndf_sharpness, (4.0 * saturate(self._dot(ndf_axis, v), 1e-4))
                 ),
             ],
@@ -424,7 +426,7 @@ class RenderingLayer(nn.Module):
         @ DONE 
         """
         # Geometric :
-        return torch.div(1.0, (ndx + safe_sqrt(a2 + (1 - a2) * ndx * ndx)))
+        return div_no_nan(1.0, (ndx + safe_sqrt(a2 + (1 - a2) * ndx * ndx)))
 
     def _sg_evaluate_specular(
         self,
@@ -679,7 +681,7 @@ class RenderingLayer(nn.Module):
         is modelled by sigma and epsilon and with sigma=2.5 and epsilon=0.7
         it is between 0.17 and 1.4.
         """
-        return torch.div(1.0, 2.0 * sigma * d + epsilon)
+        return div_no_nan(1.0, 2.0 * sigma * d + epsilon)
 
 
 if __name__ == "__main__":
