@@ -11,6 +11,18 @@ def INReLU(num_features):
         nn.InstanceNorm2d(num_features, eps=1e-5, affine=True),
         nn.ReLU()
     )
+
+
+def BNReLU(num_features):
+    """Shorthand for InstaceNorm + Relu
+
+    Returns:
+        [type]: [description]
+    """
+    return torch.nn.Sequential(
+        nn.BatchNorm2d(num_features, eps=1e-5, affine=True),
+        nn.ReLU()
+    )
     
 # -----------------------------------------------------------------------
 # Copyright (c) 2020, NVIDIA Corporation. All rights reserved.
@@ -151,7 +163,7 @@ def upsample(x, factor: int = 2):
     )
     return x
 
-
+# renamedto MergeConv in script merge_conv.py
 # def Fusion2DBlock(
 #     prevIn: Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]],
 #     filters: int,
@@ -206,16 +218,38 @@ def upsample(x, factor: int = 2):
 #         return l
 
 
-# def apply_preactivation(l: tf.Tensor, preact: str):
-#     if preact == "bnrelu":
-#         shortcut = l  # preserve identity mapping
-#         l = BNReLU("preact", l)
-#     if preact == "inrelu":
-#         shortcut = l
-#         l = INReLU("preact", l)
-#     else:
-#         shortcut = l
-#     return l, shortcut
+def resnet_shortcut(
+        n_in: int, n_out: int, stride: int, isDownsampling: bool, activation=torch.nn.Identity
+):
+    #data_format = get_arg_scope()["Conv2D"]["data_format"]
+    #n_in = l.shape.as_list()[
+    #     1 if data_format in ["NCHW", "channels_first"] else 3
+    # ]
+    if n_in != n_out or stride != 1:  # change dimension when channel is not the same
+        if isDownsampling:
+            return torch.nn.Sequential(
+                torch.nn.Conv2d(
+                n_in, n_out, kernel_size=1, stride=stride, padding=0),  # , bias=False),
+                activation(n_out)
+            )
+        else:
+            return torch.nn.Sequential(
+                torch.nn.ConvTranspose2d(
+                    n_in, n_out, kernel_size=1, stride=stride, padding=0),  # , bias=False),
+                activation(n_out)
+            )
+    else:
+        return torch.nn.Identity()
+
+
+def apply_preactivation(channels, preact: str):
+    if preact == "bnrelu":
+        layer = BNReLU(channels)
+    elif preact == "inrelu":
+        layer = INReLU(channels)
+    else:
+        layer = torch.nn.Identity(channels)
+    return layer
 
 
 # def preresnet_basicblock(
@@ -242,6 +276,36 @@ def upsample(x, factor: int = 2):
 
 #     return l + resnet_shortcut(shortcut, ch_out, stride, isDownsampling)
 
+
+def preresnet_basicblock(
+    ch_in: int,
+    ch_out: int,
+    stride: int,
+    preact: str,
+    isDownsampling: bool,
+    dilation: int = 1,
+    withDropout: bool = False,
+ ):
+    layers = []
+    layers.append(apply_preactivation(ch_in, preact))
+
+    if isDownsampling:
+        # TODO: test if padding is right
+        layers.append(torch.nn.Conv2d(ch_in, ch_out, kernel_size=3, stride=stride, padding=dilation, dilation=dilation))
+    else:
+        # TODO: test if padding is right
+        layers.append(torch.nn.ConvTranspose2d(ch_in, ch_out, kernel_size=3, stride=stride, padding=dilation,
+                                               dilation=dilation))
+
+    if withDropout:
+        layers.append(torch.nn.Dropout(ch_out))
+    layers.append(apply_preactivation(ch_out, preact))
+
+    layers.append(torch.nn.Conv2d(ch_out, ch_out, kernel_size=3, stride=1, padding=dilation, dilation=dilation))
+
+    layers.append(resnet_shortcut(ch_in, ch_out, stride, isDownsampling))
+
+    return torch.nn.Sequential(*layers)
 
 # def preresnet_group(
 #     name: str,
@@ -305,3 +369,81 @@ def upsample(x, factor: int = 2):
 #         return l, skipConnection
 #     else:
 #         return l
+
+
+def preresnet_group(
+    name: str,
+    ch_in: int,
+    block_func: Callable[[int, int, int, str, bool, int, bool], torch.nn.Module],
+    features: int,
+    count: int,
+    stride: int,
+    isDownsampling: bool,
+    activation_function: str = "inrelu",
+    dilation: int = 1,
+    withDropout: bool = False,
+    addLongSkip = None, # : Optional[Tuple[int, tf.Tensor]] = None, TODO: add TypeHint
+    getLongSkipFrom: Optional[int] = None,
+) -> Tuple[torch.nn.Module]:
+# ) -> Union[tf.Tensor, Tuple[tf.Tensor, tf.Tensor]]:
+    if addLongSkip and getLongSkipFrom:
+        assert addLongSkip[0] != getLongSkipFrom
+
+    if stride != 1:
+        assert dilation == 1
+    if dilation != 1:
+        assert stride == 1
+
+    layers = []
+    torch_layers = []
+
+    if addLongSkip is not None:
+        addSkipAt, skipConn = addLongSkip
+    else:
+        addSkipAt, skipConn = -1, None
+
+    for i in range(0, count):
+        # first block doesn't need activation
+        layer = block_func(
+            ch_in,
+            features,
+            stride if i == 0 else 1,
+            "no_preact" if i == 0 else activation_function,
+            isDownsampling if i == 0 else True,
+            dilation,
+            withDropout,
+        )
+        layers.append(layer)
+
+        if getLongSkipFrom is not None:
+            if i == getLongSkipFrom:
+                skipConnection = layer
+                torch_layers.append((torch.nn.Sequential(*layers), "save"))
+                layers.clear()
+
+        if i == addSkipAt:
+            #with tf.variable_scope("long_shortcut"):
+            changed_shortcut = resnet_shortcut(
+                #skipConn, l.shape[-1], 1, True
+                features, features, 1, True  # first features is probably wrong
+            )
+            layers.append(changed_shortcut)
+
+            #l = l + changed_shortcut
+            torch_layers.append((torch.nn.Sequential(*layers), "add"))
+            layers.clear()
+
+    # end of each group need an extra activation
+    if activation_function == "bnrelu":
+        layers.append(features)
+    if activation_function == "inrelu":
+        layers.append(features)
+
+    torch_layers.append((torch.nn.Sequential(*layers), "end"))
+
+    return torch_layers
+
+    #if getLongSkipFrom is not None:
+    #    return l, skipConnection
+    #else:
+    #    return l

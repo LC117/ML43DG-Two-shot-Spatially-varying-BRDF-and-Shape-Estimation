@@ -287,14 +287,14 @@ if __name__ == "__main__":
 
     trainer = pl.Trainer(
         #weights_summary="full",
-        max_epochs=200,
+        max_epochs=30,
         progress_bar_refresh_rate=25,  # to prevent notebook crashes in Google Colab environments
         gpus=1,  # Use GPU if available
         profiler="simple",
         #precision=16,
     )
 
-    data = TwoShotBrdfDataLightning(mode="shape", overfit=True, num_workers=2, batch_size=5, persistent_workers=True, pin_memory=True)
+    data = TwoShotBrdfDataLightning(mode="shape", overfit=True, num_workers=4, batch_size=8, persistent_workers=True, pin_memory=True)
 
     trainer.fit(model, train_dataloaders=data)
 
@@ -307,8 +307,6 @@ if __name__ == "__main__":
     test_sample["cam1"] = torch.Tensor(test_sample["cam1"][None, ...])
     test_sample["cam2"] = torch.Tensor(test_sample["cam2"][None, ...])
     test_sample["mask"] = torch.Tensor(test_sample["mask"][None, ...])
-    #test_sample["mask"] = test_sample["mask"].reshape(1, test_sample["mask"].shape[1], test_sample["mask"].shape[2], 1)
-    #joined_test_sample = torch.cat([torch.Tensor(test_sample["cam1"]), torch.Tensor(test_sample["cam2"]), torch.Tensor(test_sample["mask"])], dim=-1)
     out = model.forward((test_sample["cam1"], test_sample["cam2"], test_sample["mask"]))
     print("out", out.shape)
 
