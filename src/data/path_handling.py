@@ -2,12 +2,14 @@ from pathlib import Path
 
 
 class PathHandler:
-    def __init__(self) -> None:
+    def __init__(self, on_cluster=False) -> None:
         """
         Here all the paths that are relevant will be added:
         """
         self.root_dir = Path(__file__).resolve().parent.parent # PosixPath('.../ML43DG-Two-shot-Spatially-varying-BRDF-and-Shape-Estimation/src')
         self.data_dir = self.check_path(self.root_dir / "data")
+        if on_cluster:
+            self.data_dir = Path("/cluster/52/twoshotbrdf/")
         self.model_dir = self.check_path(self.root_dir / "model")
     
     

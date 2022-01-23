@@ -6,6 +6,8 @@ from torch.utils.data import Dataset
 from src.data.path_handling import path_manager
 from src.utils.images import *
 
+import pyexr
+
 
 class TwoShotBrdfData(Dataset):
     """
@@ -42,12 +44,54 @@ class TwoShotBrdfData(Dataset):
         self.prefix = TwoShotBrdfData.items_prefixes[split]
         self.mode = mode
 
+        self.storeData = split == "overfit"
+        self.data = {}
+
     def __getitem__(self, index):
         """
         PyTorch requires you to provide a getitem implementation for your dataset.
         :param index: index of the dataset sample that will be returned
         :return: a dictionary of brdf data
         """
+        if self.storeData:
+            if index in self.data:
+                return self.data[index]
+
+        item = self._gen_path(index)
+        res = {}
+        if self.mode in ["cams", "shape", "illumination", "all"]:
+            res = {
+                "cam1" :        pyexr.open(str(item) + "\\cam1_env.exr").get(),
+                "cam2" :        pyexr.open(str(item) + "\\cam2.exr").get(),
+                "mask" :        load_mono(item / "mask.png")
+            }
+        if self.mode in ["shape", "illumination", "all"]:
+            res.update({
+                "depth" :       pyexr.open(str(item) + "\\depth.exr").get()[:, :, 0],
+                "normal" :      pyexr.open(str(item) + "\\normal.exr").get(),
+            })
+        if self.mode in ["illumination", "all"]:
+            res.update({
+                "sgs" :         np.load(item / "sgs.npy").astype(np.float32)
+            })
+        if self.mode == "all":
+            res.update({
+                "flash" :       pyexr.open(str(item) + "\\cam1_flash.exr").get(),
+                "diffuse" :     load_rgb(item / "diffuse.png"),
+                "specular" :    load_rgb(item / "specular.png"),
+                "roughness" :   load_mono(item / "roughness.png")
+            })
+        if self.storeData:
+            self.data[index] = res
+        return res
+
+    """
+    def __getitem__(self, index):
+        #
+        #PyTorch requires you to provide a getitem implementation for your dataset.
+        #:param index: index of the dataset sample that will be returned
+        #:return: a dictionary of brdf data
+        
         item = self._gen_path(index)
         res = {}
         if self.mode in ["cams", "shape", "illumination", "all"]:
@@ -61,7 +105,7 @@ class TwoShotBrdfData(Dataset):
                 "depth" :       readEXR(item / "depth.exr")[1],
                 "normal" :      readEXR(item / "normal.exr")[0],
             })
-        if self.mode in ["illumination"]:
+        if self.mode in ["illumination", "all"]:
             res.update({
                 "sgs" :         np.load(item / "sgs.npy").astype(np.float32)
             })
@@ -69,10 +113,11 @@ class TwoShotBrdfData(Dataset):
             res.update({
                 "flash" :       readEXR(item / "cam1_flash.exr")[0],
                 "diffuse" :     load_rgb(item / "diffuse.png"),
-                "roughness" :   load_mono(item / "roughness.png"),
-                "specular" :    load_mono(item / "specular.png")
+                "specular" :    load_rgb(item / "specular.png"),
+                "roughness" :   load_mono(item / "roughness.png")
             })
         return res
+    """
 
     def __len__(self):
         """
@@ -88,8 +133,13 @@ class TwoShotBrdfData(Dataset):
         s_idx_, e_idx_, n = self.items
         fdr_idx_ = s_idx_ + int(index / n)
         itm_idx_ = index % n
-        fdr_ = ((4 - int(fdr_idx_ / 10)) * "0") + str(fdr_idx_)
-        itm_ = ((2 - int(itm_idx_ / 10)) * "0") + str(itm_idx_)
+
+        # fill fdr_ with leading zeros, so that it always has 5 digits
+        fdr_ = str(fdr_idx_).zfill(5)
+        itm_ = str(itm_idx_).zfill(3)
+
+        #fdr_ = ((4 - int(fdr_idx_ / 10)) * "0") + str(fdr_idx_)
+        #itm_ = ((2 - int(itm_idx_ / 10)) * "0") + str(itm_idx_)
         return path_manager.data_dir / self.prefix / fdr_ / itm_
 
     @staticmethod
@@ -100,12 +150,14 @@ class TwoShotBrdfData(Dataset):
         """
         batch["cam1"].to(device)
         batch["cam2"].to(device)
-        batch["flash"].to(device)
         batch["mask"].to(device)
         if "depth" in batch.keys():
             batch["depth"].to(device)
             batch["normal"].to(device)
-        if "diffuse" in batch.keys():
+        if "sgs" in batch.keys():
+            batch["sgs"].to(device)
+        if "flash" in batch.keys():
+            batch["flash"].to(device)
             batch["diffuse"].to(device)
             batch["roughness"].to(device)
             batch["specular"].to(device)
