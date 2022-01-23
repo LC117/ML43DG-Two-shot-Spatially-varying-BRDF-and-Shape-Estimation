@@ -8,7 +8,6 @@ from src.utils.images import *
 
 import pyexr
 
-
 class TwoShotBrdfData(Dataset):
     """
     Dataset for loading brdf data
@@ -61,14 +60,14 @@ class TwoShotBrdfData(Dataset):
         res = {}
         if self.mode in ["cams", "shape", "illumination", "all"]:
             res = {
-                "cam1" :        pyexr.open(str(item) + "\\cam1_env.exr").get(),
-                "cam2" :        pyexr.open(str(item) + "\\cam2.exr").get(),
+                "cam1" :        pyexr.open(str(item / "cam1_env.exr")).get(),
+                "cam2" :        pyexr.open(str(item / "cam2.exr")).get(),
                 "mask" :        load_mono(item / "mask.png")
             }
         if self.mode in ["shape", "illumination", "all"]:
             res.update({
-                "depth" :       pyexr.open(str(item) + "\\depth.exr").get()[:, :, 0],
-                "normal" :      pyexr.open(str(item) + "\\normal.exr").get(),
+                "depth" :       pyexr.open(str(item / "depth.exr")).get()[:, :, 0],
+                "normal" :      pyexr.open(str(item / "normal.exr")).get(),
             })
         if self.mode in ["illumination", "all"]:
             res.update({
@@ -76,7 +75,7 @@ class TwoShotBrdfData(Dataset):
             })
         if self.mode == "all":
             res.update({
-                "flash" :       pyexr.open(str(item) + "\\cam1_flash.exr").get(),
+                "flash" :       pyexr.open(str(item / "cam1_flash.exr")).get(),
                 "diffuse" :     load_rgb(item / "diffuse.png"),
                 "specular" :    load_rgb(item / "specular.png"),
                 "roughness" :   load_mono(item / "roughness.png")

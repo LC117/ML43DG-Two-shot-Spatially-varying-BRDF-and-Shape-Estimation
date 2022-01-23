@@ -289,7 +289,7 @@ if __name__ == "__main__":
         #weights_summary="full",
         max_epochs=200,
         progress_bar_refresh_rate=25,  # to prevent notebook crashes in Google Colab environments
-        gpus=1,  # Use GPU if available
+        gpus=0,  # Use GPU if available
         profiler="simple",
         #precision=16,
     )
