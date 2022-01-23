@@ -84,7 +84,7 @@ class RenderingLayer(nn.Module):
         #     coord = chwToHwc(coord)
 
         assert coord.dtype == np.float32
-        self.base_mesh = torch.from_numpy(np.expand_dims(coord, 0), dtype=torch.float32)
+        self.base_mesh = torch.from_numpy(np.expand_dims(coord, 0))
         assert self.base_mesh.dtype == torch.float32
 
     def call(
@@ -679,3 +679,9 @@ class RenderingLayer(nn.Module):
         it is between 0.17 and 1.4.
         """
         return torch.div(1.0, 2.0 * sigma * d + epsilon)
+
+
+if __name__ == "__main__":
+    model =  RenderingLayer(60, 0.7, torch.Size([32, 3, 256, 256]))
+    ytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(ytorch_total_params)
