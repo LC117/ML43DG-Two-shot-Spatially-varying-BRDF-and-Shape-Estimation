@@ -1,6 +1,14 @@
 import torch
 from torch import nn
 
+def div_no_nan(x, y):
+    """ Replicate functionality tf.div_no_nan
+    """
+    if type(y) == float:
+        return 0. if y == 0. else x / y
+    return (x / y) * (y != 0)
+
+
 def INReLU(num_features):
     """Shorthand for InstaceNorm + Relu
 
@@ -62,13 +70,6 @@ def apply_mask(
     )
 
 
-def div_no_nan(x, y):
-    if y == 0:
-        return torch.zeros_like(x)
-    else:
-        return x / y
-
-
 def uncompressDepth(
     d: torch.Tensor, sigma: float = 2.5, epsilon: float = 0.7
 ) -> torch.Tensor:
@@ -76,7 +77,7 @@ def uncompressDepth(
         is modelled by sigma and epsilon and with sigma=2.5 and epsilon=0.7
         it is between 0.17 and 1.4.
         """
-    return torch.div(1.0, 2.0 * sigma * d + epsilon)
+    return div_no_nan(1.0, 2.0 * sigma * d + epsilon)
 
 
 def saturate(x, l=0.0, h=1.0):
@@ -90,8 +91,8 @@ def mix(x, y, a):
 def srgb_to_linear(x: torch.Tensor) -> torch.Tensor:
     return torch.where(
         torch.greater_equal(x, 0.04045),
-        torch.pow(torch.div(x + 0.055, 1.055), 2.4),
-        torch.div(x, 12.92),
+        torch.pow(div_no_nan(x + 0.055, 1.055), 2.4),
+        div_no_nan(x, 12.92),
     )
 
 
@@ -119,15 +120,16 @@ def magnitude(x: torch.Tensor, data_format: str = "channels_last") -> torch.Tens
     )  # Relu seems strange but we're just clipping 0 values
 
 
-def own_div_no_nan(
-    x: torch.Tensor, y: torch.Tensor, data_format: str = "channels_last"
-) -> torch.Tensor:
-    return torch.where(torch.less(to_vec3(y, data_format), 1e-7), torch.zeros_like(x), x / y)
+# def div_no_nan(
+    # SEE div_no_nan function in this file!
+#     x: torch.Tensor, y: torch.Tensor, data_format: str = "channels_last"
+# ) -> torch.Tensor:
+#     return torch.where(torch.less(to_vec3(y, data_format), 1e-7), torch.zeros_like(x), x / y)
 
 
 def normalize(x: torch.Tensor, data_format: str = "channels_last") -> torch.Tensor:
     assert data_format in ["channels_last", "channels_first"]
-    return own_div_no_nan(x, magnitude(x, data_format), data_format)
+    return div_no_nan(x, magnitude(x, data_format), data_format)
 
 
 def dot(x: torch.Tensor, y: torch.Tensor, data_format: str = "channels_last") -> torch.Tensor:

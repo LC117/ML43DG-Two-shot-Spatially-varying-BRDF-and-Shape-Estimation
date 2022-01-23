@@ -8,7 +8,6 @@ from src.utils.images import *
 
 import pyexr
 
-
 class TwoShotBrdfData(Dataset):
     """
     Dataset for loading brdf data
@@ -52,6 +51,10 @@ class TwoShotBrdfData(Dataset):
         PyTorch requires you to provide a getitem implementation for your dataset.
         :param index: index of the dataset sample that will be returned
         :return: a dictionary of brdf data
+        
+        Note: 
+        Tansformation of shape is done here, as in official Datasets from torchvision.
+        see: https://pytorch.org/vision/stable/_modules/torchvision/datasets/mnist.html#MNIST
         """
         if self.storeData:
             if index in self.data:
@@ -61,14 +64,14 @@ class TwoShotBrdfData(Dataset):
         res = {}
         if self.mode in ["cams", "shape", "illumination", "all"]:
             res = {
-                "cam1" :        pyexr.open(str(item) + "\\cam1_env.exr").get(),
-                "cam2" :        pyexr.open(str(item) + "\\cam2.exr").get(),
-                "mask" :        load_mono(item / "mask.png")
+                "cam1" :        np.transpose(pyexr.open(str(item / "cam1_env.exr")).get(), (2, 0, 1)),
+                "cam2" :        np.transpose(pyexr.open(str(item / "cam2.exr")).get(), (2, 0, 1)),
+                "mask" :        load_mono(item / "mask.png")[np.newaxis, ...]
             }
         if self.mode in ["shape", "illumination", "all"]:
             res.update({
-                "depth" :       pyexr.open(str(item) + "\\depth.exr").get()[:, :, 0],
-                "normal" :      pyexr.open(str(item) + "\\normal.exr").get(),
+                "depth" :       pyexr.open(str(item / "depth.exr")).get()[np.newaxis, :, :, 0],
+                "normal" :      np.transpose(pyexr.open(str(item / "normal.exr")).get(), (2, 0, 1)),
             })
         if self.mode in ["illumination", "all"]:
             res.update({
@@ -76,10 +79,10 @@ class TwoShotBrdfData(Dataset):
             })
         if self.mode == "all":
             res.update({
-                "flash" :       pyexr.open(str(item) + "\\cam1_flash.exr").get(),
-                "diffuse" :     load_rgb(item / "diffuse.png"),
-                "specular" :    load_rgb(item / "specular.png"),
-                "roughness" :   load_mono(item / "roughness.png")
+                "flash" :       np.transpose(pyexr.open(str(item / "cam1_flash.exr")).get(), (2, 0, 1)),
+                "diffuse" :     np.transpose(load_rgb(item / "diffuse.png"), (2, 0, 1)),
+                "specular" :    np.transpose(load_rgb(item / "specular.png"), (2, 0, 1)),
+                "roughness" :   np.transpose(load_mono(item / "roughness.png"), (2, 0, 1))
             })
         if self.storeData:
             self.data[index] = res
