@@ -36,7 +36,7 @@ from src.utils.common_layers import (
 )
 # from utils.dataflow_utils import apply_mask, chwToHwc, ensureSingleChannel, hwcToChw
 
-from utils.common_layers import div_no_nan
+from src.utils.common_layers import div_no_nan
 
 EPS = 1e-7
 

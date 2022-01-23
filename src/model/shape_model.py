@@ -12,7 +12,7 @@ from math import log2
 import src.utils.rendering_layer as rl
 import src.utils.sg_utils as sg
 from src.data.dataloader_lightning import TwoShotBrdfDataLightning
-from src.utils.common_layers import INReLU, uncompressDepth, div_no_nan, own_div_no_nan
+from src.utils.common_layers import INReLU, uncompressDepth, div_no_nan
 from src.utils.merge_conv import MergeConv
 
 MAX_VAL = 2
@@ -34,7 +34,7 @@ class ShapeNetwork(pl.LightningModule):
         self.imgSize = imgSize
         self.base_nf = base_nf
         self.downscale_steps = downscale_steps
-        self.consistency_loss = consistency_loss
+        self.consistency_loss_factor = consistency_loss
         self.enable_consistency = consistency_loss != 0
 
         #self.num_sgs = num_sgs  # spherical gaussian
@@ -136,58 +136,40 @@ class ShapeNetwork(pl.LightningModule):
         # Perform a forward pass on the network with inputs
         normal, depth = self.forward(x)
 
+        # In the paper the following loss is a L2 loss, but the tf implementation uses L1:
         normal_l1_loss = self.masked_loss(normal * 2 - 1, normal_gt * 2 - 1, mask, torch.nn.L1Loss())
         depth_l1_loss = self.masked_loss(depth, depth_gt, mask, torch.nn.L1Loss())
+        consistency_loss = 0
+        
+        if self.enable_consistency:
+            
+            near = uncompressDepth(1)
+            far = uncompressDepth(0)
+            d = uncompressDepth(depth)
+            depth_inv = div_no_nan(d - near, far - near)
 
-        near = uncompressDepth(1)
-        far = uncompressDepth(0)
-        d = uncompressDepth(depth)
-        depth_inv = div_no_nan(d - near, far - near)
+            # calculate the gradient dx, dy and dz of the predicted depth map
+            # declare the sobelfilters as torch.FloatTensor type
+            sobel_x = torch.tensor([[1, 0, -1], [2, 0, -2], [1, 0, -1]], dtype=torch.float32, device=self.device).detach()
+            sobel_x = sobel_x.view((1, 1, 3, 3))
+            sobel_y = torch.tensor([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], dtype=torch.float32, device=self.device).detach()
+            sobel_y = - sobel_y.view((1, 1, 3, 3))
 
-        # calculate the gradient dx, dy and dz of the predicted depth map
-        # declare the sobelfilters as torch.FloatTensor type
-        sobel_x = torch.tensor([[1, 0, -1], [2, 0, -2], [1, 0, -1]], dtype=torch.float32, device=self.device).detach()
-        sobel_x = sobel_x.view((1, 1, 3, 3))
-        sobel_y = torch.tensor([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], dtype=torch.float32, device=self.device).detach()
-        sobel_y = -1. * sobel_y.view((1, 1, 3, 3))
-        #sobel_x_3d = torch.tensor([[[1, 0, -1], [2, 0, -2], [1, 0, -1]],
-        #                           [[1, 0, -1], [2, 0, -2], [1, 0, -1]],
-        #                           [[1, 0, -1], [2, 0, -2], [1, 0, -1]]])
-        #sobel_z_3d = torch.tensor([[[1, 2, 1], [2, 4, 2], [1, 2, 1]],
-        #                           [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-        #                           [[-1, -2, -1], [-2, -4, -2], [-1, -2, -1]]])
-        dx = torch.nn.functional.conv2d(depth_inv.unsqueeze(1), sobel_x, padding=1, stride=1)
-        dy = torch.nn.functional.conv2d(depth_inv.unsqueeze(1), sobel_y, padding=1, stride=1, )
+            dx = F.conv2d(depth_inv, sobel_x, padding=1, stride=1)
+            dy = F.conv2d(depth_inv, sobel_y, padding=1, stride=1)
 
-        #filter_x = nn.Conv2d(in_channels=1, out_channels=2, kernel_size=3, stride=1, padding=0, bias=False)
-        #filter_y = nn.Conv2d(in_channels=1, out_channels=2, kernel_size=3, stride=1, padding=0, bias=False)
-        #filter_x.weight = nn.Parameter(sobel_x, requires_grad=False)
-        #filter_y.weight = nn.Parameter(sobel_y, requires_grad=False)
-        #dx = filter_x(out[..., 0])
-        #dy = filter_y(out[..., 0])
+            texel_size = 1 / self.imgSize
+            # create a tensor of ones of shape and type of out[..., 0]
+            dz = torch.ones_like(dx) * texel_size * 2
 
-        #sobel = torch.nn.Sobel(padding_mode='zeros')
-        #dx = sobel(out[..., 1])
-        #dy = sobel(out[..., 1], 1)
-        texel_size = 1.0 / self.imgSize
-        # create a tensor of ones of shape and type of out[..., 0]
-        ones = torch.ones_like(dx)
-        dz = ones * texel_size * 2.0
+            cn = torch.cat([dx, dy, dz], dim=1)
+            cn = cn / torch.norm(cn, dim=1, keepdim=True)
+            cn = cn * 0.5 + 0.5
+            
+            # In the paper the following loss is a L1 loss, but the tf implementation uses L2:
+            consistency_loss = self.consistency_loss_factor * self.masked_loss(cn, normal, mask, torch.nn.MSELoss())
 
-        # n = tf.concat([dx, dy, dz], -1)
-        n = torch.cat([dx, dy, dz], dim=1)
-        # n = normalize(n)
-        n = n / torch.norm(n, dim=1, keepdim=True)
-        n = n * 0.5 + 0.5
-
-        #consistency_loss = torch.nn.L1Loss()(n, out[..., 1:].reshape(-1, 3, self.imgSize, self.imgSize))
-        consistency_loss = self.masked_loss(n.permute((0, 2, 3, 1)), out[..., 1:], mask3, torch.nn.MSELoss())
-
-        shape_loss = depth_l1_loss + normal_l1_loss + self.consistency_loss * consistency_loss
-
-
-        #shape_loss = torch.nn.MSELoss()(out, targets_joined)
-        #shape_loss = self.masked_loss(out, targets_joined, mask, torch.nn.MSELoss(), channel_first=False)
+        shape_loss = depth_l1_loss + normal_l1_loss + consistency_loss
 
         return shape_loss
 

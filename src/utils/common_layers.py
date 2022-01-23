@@ -4,8 +4,9 @@ from torch import nn
 def div_no_nan(x, y):
     """ Replicate functionality tf.div_no_nan
     """
-    mask = y == 0
-    return (x / y) * (1 - mask)
+    if type(y) == float:
+        return 0. if y == 0. else x / y
+    return (x / y) * (y != 0)
 
 
 def INReLU(num_features):
