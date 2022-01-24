@@ -15,6 +15,8 @@ from src.data.dataloader_lightning import TwoShotBrdfDataLightning
 from src.utils.common_layers import INReLU, uncompressDepth, div_no_nan
 from src.utils.merge_conv import MergeConv
 
+from pathlib import Path
+
 MAX_VAL = 2
 
 """
@@ -80,6 +82,17 @@ class ShapeNetwork(pl.LightningModule):
             torch.nn.Conv2d(inp_channels, 4, 5, padding='same'),
             torch.nn.Sigmoid()
         )
+
+        # declare the sobelfilters as torch.FloatTensor type
+        self.sobel_x = torch.tensor([[1, 0, -1], [2, 0, -2], [1, 0, -1]], dtype=torch.float32, device=self.device).detach()
+        self.sobel_x = self.sobel_x.view((1, 1, 3, 3))
+        self.sobel_y = torch.tensor([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], dtype=torch.float32, device=self.device).detach()
+        self.sobel_y = - self.sobel_y.view((1, 1, 3, 3))
+
+        #dx = F.conv2d(depth_inv, sobel_x, padding=1, stride=1)
+        #dy = F.conv2d(depth_inv, sobel_y, padding=1, stride=1)
+        self.conv_dx
+
         return
 
     def forward(self, x):
@@ -130,8 +143,7 @@ class ShapeNetwork(pl.LightningModule):
         mask = batch["mask"]
         
         x = batch["cam1"], batch["cam2"], batch["mask"]
-        # targets = batch["normal"], batch["depth"].reshape(-1, self.imgSize, self.imgSize, 1)
-        normal_gt, depth_gt = batch["normal"], batch["depth"]#.unsqueeze(-1)
+        normal_gt, depth_gt = batch["normal"], batch["depth"]
 
         # Perform a forward pass on the network with inputs
         normal, depth = self.forward(x)
@@ -149,14 +161,10 @@ class ShapeNetwork(pl.LightningModule):
             depth_inv = div_no_nan(d - near, far - near)
 
             # calculate the gradient dx, dy and dz of the predicted depth map
-            # declare the sobelfilters as torch.FloatTensor type
-            sobel_x = torch.tensor([[1, 0, -1], [2, 0, -2], [1, 0, -1]], dtype=torch.float32, device=self.device).detach()
-            sobel_x = sobel_x.view((1, 1, 3, 3))
-            sobel_y = torch.tensor([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], dtype=torch.float32, device=self.device).detach()
-            sobel_y = - sobel_y.view((1, 1, 3, 3))
 
-            dx = F.conv2d(depth_inv, sobel_x, padding=1, stride=1)
-            dy = F.conv2d(depth_inv, sobel_y, padding=1, stride=1)
+
+            dx = F.conv2d(depth_inv, self.sobel_x, padding=1, stride=1).detach()
+            dy = F.conv2d(depth_inv, self.sobel_y, padding=1, stride=1).detach()
 
             texel_size = 1 / self.imgSize
             # create a tensor of ones of shape and type of out[..., 0]
@@ -221,14 +229,25 @@ class ShapeNetwork(pl.LightningModule):
 if __name__ == "__main__":
     # Training:
 
-    model = ShapeNetwork(consistency_loss=0.5)#downscale_steps=2, base_nf=4)
+    resume_from_checkpoint = None
+    resume_training = False
+    if resume_training:
+        path_start = Path("lightning_logs")
+        ckpt_path = Path("epoch=14-step=14.ckpt")
+        ckpt_path = path_start / "version_258" / "checkpoints" / ckpt_path
+        resume_from_checkpoint = str(ckpt_path)
+        model = ShapeNetwork.load_from_checkpoint(
+            checkpoint_path=str(ckpt_path))
+    else:
+        model = ShapeNetwork(consistency_loss=0.5)  # downscale_steps=2, base_nf=4)
 
     trainer = pl.Trainer(
         #weights_summary="full",
-        max_epochs=30,
+        max_epochs=20,
         progress_bar_refresh_rate=25,  # to prevent notebook crashes in Google Colab environments
-        gpus=0,  # Use GPU if available
+        #gpus=1,  # Use GPU if available
         profiler="simple",
+        resume_from_checkpoint=resume_from_checkpoint,
         #precision=16,
     )
 
@@ -239,21 +258,21 @@ if __name__ == "__main__":
     test_sample = data.train_dataloader().dataset[1]
     print("test sample", test_sample.keys(), test_sample["mask"].shape)
     # remove depth and normal from the test sample dict
-    depth_gt = test_sample.pop("depth")
-    normal_gt = test_sample.pop("normal")
+    depth_gt = test_sample.pop("depth").squeeze(0)
+    normal_gt = np.transpose(test_sample.pop("normal"), (1, 2, 0))
     # make the cam1, cam2 and mask 4 dimensional
     test_sample["cam1"] = torch.Tensor(test_sample["cam1"][None, ...])
     test_sample["cam2"] = torch.Tensor(test_sample["cam2"][None, ...])
     test_sample["mask"] = torch.Tensor(test_sample["mask"][None, ...])
-    out = model.forward((test_sample["cam1"], test_sample["cam2"], test_sample["mask"]))
-    print("out", out.shape)
+    normal, depth = model.forward((test_sample["cam1"], test_sample["cam2"], test_sample["mask"]))
+    #print("out", out.shape)
 
-    out_np = out.detach().cpu().numpy()
-    #out_np = torch.permute(out_np, [0, 2, 3, 1])
-    out_np = np.reshape(out_np, (out_np.shape[1], out_np.shape[2], out_np.shape[3]))
-    depth = out_np[..., 0]
-    normal = out_np[..., 1:]
+    normal = normal.permute(0, 2, 3, 1).squeeze(0)
+    depth = depth.squeeze(0).squeeze(0)
+    normal = normal.detach().cpu().numpy()
+    depth = depth.detach().cpu().numpy()
 
+    """
     depth_tensor = torch.Tensor(depth_gt)
     near = uncompressDepth(1)
     far = uncompressDepth(0)
@@ -284,6 +303,7 @@ if __name__ == "__main__":
     n = n.permute(1, 2, 0)
     dx = dx.squeeze(0).squeeze(0)
     dy = dy.squeeze(0).squeeze(0)
+    """
 
     # create a new folder Test_Results
     # and save the depth and normal maps
@@ -300,20 +320,20 @@ if __name__ == "__main__":
     plt.imsave("Test_Results/depth_gt.png", depth_gt, cmap="gray")
     plt.imsave("Test_Results/normal_gt.png", normal_gt)
 
-    print(dx.shape)
-    print(n.shape)
-    print(depth_tensor.shape)
-    print(depth_gt.shape)
+    # print(dx.shape)
+    # print(n.shape)
+    # print(depth_tensor.shape)
+    # print(depth_gt.shape)
 
     # save the n as rgb using matplotlib
-    plt.imsave("Test_Results/n.png", n.detach().cpu().numpy())
+    # plt.imsave("Test_Results/n.png", n.detach().cpu().numpy())
 
     # save dx and dy using matplotlib
-    plt.imsave("Test_Results/dx.png", dx.detach().cpu().numpy(), cmap="gray")
-    plt.imsave("Test_Results/dy.png", dy.detach().cpu().numpy(), cmap="gray")
+    # plt.imsave("Test_Results/dx.png", dx.detach().cpu().numpy(), cmap="gray")
+    # plt.imsave("Test_Results/dy.png", dy.detach().cpu().numpy(), cmap="gray")
 
     # save depth_tensor using matplotlib
-    plt.imsave("Test_Results/depth_tensor.png", depth_tensor.detach().cpu().numpy(), cmap="gray")
+    # plt.imsave("Test_Results/depth_tensor.png", depth_tensor.detach().cpu().numpy(), cmap="gray")
 
     print("DONE")
 
