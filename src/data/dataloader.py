@@ -82,7 +82,7 @@ class TwoShotBrdfData(Dataset):
                 "flash" :       np.transpose(pyexr.open(str(item / "cam1_flash.exr")).get(), (2, 0, 1)),
                 "diffuse" :     np.transpose(load_rgb(item / "diffuse.png"), (2, 0, 1)),
                 "specular" :    np.transpose(load_rgb(item / "specular.png"), (2, 0, 1)),
-                "roughness" :   np.transpose(load_mono(item / "roughness.png"), (2, 0, 1))
+                "roughness" :   load_mono(item / "roughness.png")[np.newaxis, :, :]
             })
         if self.storeData:
             self.data[index] = res

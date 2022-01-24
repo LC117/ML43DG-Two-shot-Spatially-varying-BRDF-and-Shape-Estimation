@@ -158,12 +158,19 @@ def repeat(x: torch.Tensor, n: int, axis: int) -> torch.Tensor:
     
     return torch.tile(x, repeat)
 
+
 def upsample(x, factor: int = 2):
     _, h, w, _ = x.get_shape().as_list()
     x = torch.image.resize_nearest_neighbor(
         x, [factor * h, factor * w], align_corners=True
     )
     return x
+
+
+def binaerize_mask(mask: torch.Tensor, threshold: float = 1e-5) -> torch.Tensor:
+    return torch.where(
+        torch.less_equal(mask, threshold), torch.zeros_like(mask), torch.ones_like(mask)
+    )
 
 # renamedto MergeConv in script merge_conv.py
 # def Fusion2DBlock(
