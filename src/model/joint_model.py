@@ -17,18 +17,13 @@ from src.utils.merge_conv import MergeConv
 
 MAX_VAL = 2
 
-"""
-Notes:
-    -> maybe interesting: pytorch_lightning "configure_shared_models"
-"""
 
 
 class JointNetwork(pl.LightningModule):
     """
     Pytorch Implementation of:
-    https://github.com/NVlabs/two-shot-brdf-shape/blob/352201b66bfa5cd5e25111451a6583a3e7d499f0/models/illumination_network.py
+    https://github.com/NVlabs/two-shot-brdf-shape/blob/352201b66bfa5cd5e25111451a6583a3e7d499f0/models/joint_network.py
     """
-
     def __init__(
         self,
         base_nf: int = 64,
@@ -41,7 +36,7 @@ class JointNetwork(pl.LightningModule):
         light_intensity_lumen=45,
         num_sgs=24,
         rendering_loss: bool = False,
-        device="cuda:0"
+        device="cpu"#"cuda:0"
     ):
         super().__init__()
         self.base_nf = base_nf
@@ -66,9 +61,9 @@ class JointNetwork(pl.LightningModule):
         self.axis_sharpness = torch.tensor(
             sg.setup_axis_sharpness(num_sgs), dtype=torch.float32, device=device)
 
-        self.downscale_steps = 4
-        self.consistency_loss = 0
-        self.enable_consistency = False
+        # self.downscale_steps = 4
+        # self.consistency_loss = 0
+        # self.enable_consistency = False
 
         layers_needed = 3
 
@@ -153,7 +148,16 @@ class JointNetwork(pl.LightningModule):
 
         params = Conv2D("output", l, 11, 5, activation=tf.nn.sigmoid)
         """
-
+        
+        torch.nn.ConvTranspose2d(
+                    in_channels=256,
+                    out_channels=256,
+                    kernel_size=4,
+                    stride=2,
+                    padding=1)(torch.randn((1, 256, 32, 32))).shape
+        
+        
+        in_channels = 256
         self.decoder_layers = []
         for i in range(layers_needed):
             inv_i = layers_needed - i
