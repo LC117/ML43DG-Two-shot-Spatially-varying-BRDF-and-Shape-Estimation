@@ -35,7 +35,7 @@ class TwoShotBrdfDataLightning(pl.LightningDataModule):
         # transforms = ...
         return DataLoader(TwoShotBrdfData(split=self.val, mode=self.mode), batch_size=self.batch_size,
                           num_workers=self.num_workers, persistent_workers=self.persistent_workers,
-                          pin_memory=self.pin_memory, shuffle=True)
+                          pin_memory=self.pin_memory)
 
     def test_dataloader(self):
         # transforms = ...
