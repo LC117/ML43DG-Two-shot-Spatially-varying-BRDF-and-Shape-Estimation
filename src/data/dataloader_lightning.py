@@ -28,12 +28,14 @@ class TwoShotBrdfDataLightning(pl.LightningDataModule):
     def train_dataloader(self):
         # transforms = ...
         return DataLoader(TwoShotBrdfData(split=self.train, mode=self.mode), batch_size=self.batch_size,
-                          num_workers=self.num_workers, persistent_workers=self.persistent_workers, pin_memory=self.pin_memory)
+                          num_workers=self.num_workers, persistent_workers=self.persistent_workers,
+                          pin_memory=self.pin_memory, shuffle=True)
 
     def val_dataloader(self):
         # transforms = ...
         return DataLoader(TwoShotBrdfData(split=self.val, mode=self.mode), batch_size=self.batch_size,
-                          num_workers=self.num_workers, persistent_workers=self.persistent_workers, pin_memory=self.pin_memory)
+                          num_workers=self.num_workers, persistent_workers=self.persistent_workers,
+                          pin_memory=self.pin_memory, shuffle=True)
 
     def test_dataloader(self):
         # transforms = ...
