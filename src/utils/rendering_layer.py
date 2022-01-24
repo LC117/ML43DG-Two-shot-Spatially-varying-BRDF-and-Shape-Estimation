@@ -634,6 +634,8 @@ class RenderingLayer(nn.Module):
                 torch.reshape(sgs[:, i], [-1, 1, 1, 7]), d
             )
 
+        from torchvision.utils import save_image
+        
         global summary_writer 
         if not summary_writer: # is None
             summary_writer = SummaryWriter()

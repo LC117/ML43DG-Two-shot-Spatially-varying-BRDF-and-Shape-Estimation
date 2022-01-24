@@ -89,13 +89,10 @@ class IlluminationNetwork(pl.LightningModule):
             nn.Sigmoid(),
         )
 
-        return
-
     def forward(self, x):
         cam1, cam2, mask, normal, depth = x
 
-        x = torch.cat([cam1, cam2, mask[..., None], normal, depth[..., None]],dim=-1)  # shape: (None, 256, 256, 11) = (None, 256, 256, 3+3+1+3+1)
-        x = torch.permute(x, (0, 3, 1, 2))  # torch expects "channel_first" order
+        x = torch.cat([cam1, cam2, mask, normal, depth],dim=1)  # shape: (None, 256, 256, 11) = (None, 256, 256, 3+3+1+3+1)
 
         x = self.enc_conv2d_block(x)
         x = self.env_map(x)
@@ -183,7 +180,7 @@ if __name__ == "__main__":
 
     trainer = pl.Trainer(
         weights_summary="full",
-        max_epochs=100,
+        max_epochs=1000,
         progress_bar_refresh_rate=25,  # to prevent notebook crashes in Google Colab environments
         # gpus=1, # Use GPU if available
     )
@@ -191,6 +188,17 @@ if __name__ == "__main__":
     data = TwoShotBrdfDataLightning(mode="illumination", overfit=True)
 
     trainer.fit(model, train_dataloaders=data)
-
+    
+    batch = list(data.train_dataloader())[0]
+    x = batch["cam1"], batch["cam2"], batch["mask"], batch["normal"], batch["depth"]
+    targets = batch["sgs"]
+    predictions = model.forward(x)
+    
+    print("Truths:")
+    print(targets[0])
+    print("Prediction:")
+    print(predictions[0])
+    
+    
     # Testing:
     # trainer.test(ckpt_path="best")
