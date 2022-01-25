@@ -37,7 +37,7 @@ class TwoShotBrdfData(Dataset):
         "overfit" :     "CVPR20TwoShotBRDFAndShapeDataset/overfit/"
     }
     
-    def __init__(self, split, training, data_mode="all"):
+    def __init__(self, split, training, mode="all"):
         """
         :param training: bool -> Set to False for inference, to True for training!
         :param split: one of 'train', 'val', 'test' or 'overfit' - for training, validation or overfitting split
@@ -46,12 +46,12 @@ class TwoShotBrdfData(Dataset):
         super().__init__()
         
         assert split in ["train", "val", "overfit", "test"]
-        assert data_mode in ["inference", "shape", "illumination", "svbrdf", "joined"]
-        assert not (training and data_mode == "inference") # Either one of these, not both
+        assert mode in ["inference", "shape", "illumination", "svbrdf", "joined"]
+        assert not (training and mode == "inference") # Either one of these, not both
         
         self.items = TwoShotBrdfData.items_subsets[split]
         self.prefix = TwoShotBrdfData.items_prefixes[split]
-        self.data_mode = data_mode
+        self.mode = mode
 
         self.storeData = split == "overfit"
         self.data = {}
@@ -72,10 +72,11 @@ class TwoShotBrdfData(Dataset):
         if self.storeData:
             if index in self.data:
                 return self.data[index]
+        
 
         path_to_folder = self._gen_path(index)
         res = {}
-        if self.data_mode in ["shape", "illumination", "svbrdf_or_joined"]:
+        if self.mode in ["shape", "illumination", "svbrdf_or_joined"]:
             res.update({
                 "cam1" :        self.read_and_transform(path_to_folder, ParameterNames.INPUT_1),
                 "cam2" :        self.read_and_transform(path_to_folder, ParameterNames.INPUT_2),
@@ -88,12 +89,12 @@ class TwoShotBrdfData(Dataset):
                 "normal" :      self.read_and_transform(path_to_folder, ParameterNames.NORMAL)
             })
             
-        if self.data_mode in ["illumination", "svbrdf_or_joined"]:
+        if self.mode in ["illumination", "svbrdf_or_joined"]:
             res.update({
                 "sgs" :         self.read_and_transform(path_to_folder, ParameterNames.SGS)
             })
             
-        if self.data_mode == "svbrdf_or_joined":
+        if self.mode == "svbrdf_or_joined":
             res.update({
                 # "flash" :       np.transpose(pyexr.open(str(item / "cam1_flash.exr")).get(), (2, 0, 1)), # SHOULD NOT BE USED -> cam1_env and cam1_flash need to be merged! -> use cam1
                 "diffuse" :     self.read_and_transform(path_to_folder, ParameterNames.DIFFUSE),
@@ -176,24 +177,24 @@ class TwoShotBrdfData(Dataset):
             if self.training:
                 # cam1_flash = np.transpose(pyexr.open(str(path_to_folder / ParameterNames.INPUT_1_FLASH)).get(), (2, 0, 1))
                 # cam1_env = np.transpose(pyexr.open(str(path_to_folder / ParameterNames.INPUT_1_ENV)).get(), (2, 0, 1))
-                cam1_flash = read_image(str(path_to_folder / ParameterNames.INPUT_1_FLASH), False)
-                cam1_env = read_image(str(path_to_folder / ParameterNames.INPUT_1_ENV), False)
+                cam1_flash = read_image(str(path_to_folder / ParameterNames.INPUT_1_FLASH.value), False)
+                cam1_env = read_image(str(path_to_folder / ParameterNames.INPUT_1_ENV.value), False)
                 cam1 = TwoShotBrdfData.merge_seperate_input_images(cam1_flash, input_env=cam1_env)
                 cam1 = TwoShotBrdfData.process_input_image(cam1)
                 
             else:
                 # cam1 = np.transpose(pyexr.open(str(path_to_folder / ParameterNames.INPUT_1_LDR)).get(), (2, 0, 1))
-                cam1 = read_image(str(path_to_folder / ParameterNames.INPUT_1_LDR), False)
+                cam1 = read_image(str(path_to_folder / ParameterNames.INPUT_1_LDR.value), False)
                 cam1 = TwoShotBrdfData.process_input_image(cam1)
                 
         elif par_name == ParameterNames.INPUT_2:
             # cam2 = np.transpose(pyexr.open(str(path_to_folder / ParameterNames.INPUT_2)).get(), (2, 0, 1))
-            cam2 = read_image(str(path_to_folder / ParameterNames.INPUT_2), False)
+            cam2 = read_image(str(path_to_folder / ParameterNames.INPUT_2.value), False)
             cam2 = TwoShotBrdfData.process_input_image(cam2)
             
         elif par_name == ParameterNames.MASK: # DONE
             # mask = load_mono(path_to_folder / ParameterNames.MASK)[np.newaxis, ...]
-            mask = read_image(str(path_to_folder / ParameterNames.MASK), True)
+            mask = read_image(str(path_to_folder / ParameterNames.MASK.value), True)
             mask[mask < 0.5] = 0.0
             mask[mask >= 0.5] = 1.0
             mask = erosion(
@@ -203,32 +204,32 @@ class TwoShotBrdfData(Dataset):
             
         elif par_name == ParameterNames.DEPTH: # DONE
             # depth = pyexr.open(str(path_to_folder / ParameterNames.DEPTH)).get()[np.newaxis, :, :, 0]
-            depth = read_image(str(path_to_folder / ParameterNames.DEPTH), True)
+            depth = read_image(str(path_to_folder / ParameterNames.DEPTH.value), True)
             depth = compressDepth(depth)
             return depth
         
         elif par_name == ParameterNames.NORMAL: # DONE
             # normal = np.transpose(pyexr.open(str(path_to_folder / ParameterNames.NORMAL)).get(), (2, 0, 1))
-            normal = read_image(str(path_to_folder / ParameterNames.NORMAL), True)
+            normal = read_image(str(path_to_folder / ParameterNames.NORMAL.value), True)
             return normal
             
         elif par_name == ParameterNames.SGS: # DONE
-            sgs = np.load(path_to_folder / ParameterNames.SGS).astype(np.float32)
+            sgs = np.load(path_to_folder / ParameterNames.SGS.value).astype(np.float32)
             return sgs
             
         elif par_name == ParameterNames.DIFFUSE: # DONE
             # diffuse = np.transpose(load_rgb(path_to_folder / "diffuse.png"), (2, 0, 1))
-            diffuse = read_image(str(path_to_folder / ParameterNames.DIFFUSE), False)
+            diffuse = read_image(str(path_to_folder / ParameterNames.DIFFUSE.value), False)
             return diffuse
             
         elif par_name == ParameterNames.SPECULAR: # DONE
             # specular = np.transpose(load_rgb(path_to_folder / "specular.png"), (2, 0, 1))
-            specular = read_image(str(path_to_folder / ParameterNames.SPECULAR), False)
+            specular = read_image(str(path_to_folder / ParameterNames.SPECULAR.value), False)
             return specular
         
         elif par_name == ParameterNames.ROUGHNESS: # DONE
             # roughness = load_mono(path_to_folder / "roughness.png")[np.newaxis, :, :]
-            roughness = read_image(str(path_to_folder / ParameterNames.ROUGHNESS), False)
+            roughness = read_image(str(path_to_folder / ParameterNames.ROUGHNESS.value), False)
             return roughness
         
     @staticmethod
