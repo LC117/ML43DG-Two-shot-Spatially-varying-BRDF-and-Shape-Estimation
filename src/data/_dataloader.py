@@ -52,7 +52,7 @@ class TwoShotBrdfData(Dataset):
         self.items = TwoShotBrdfData.items_subsets[split]
         self.prefix = TwoShotBrdfData.items_prefixes[split]
         self.mode = mode
-
+        self.split = split
         self.storeData = split == "overfit"
         self.data = {}
         
@@ -156,7 +156,7 @@ class TwoShotBrdfData(Dataset):
         itm_idx_ = index % n
 
         # fill fdr_ with leading zeros, so that it always has 5 digits
-        fdr_ = str(fdr_idx_).zfill(5)
+        fdr_ = str(fdr_idx_).zfill(5) # if not self.split == "overfit" else "00000"
         itm_ = str(itm_idx_).zfill(3)
 
         #fdr_ = ((4 - int(fdr_idx_ / 10)) * "0") + str(fdr_idx_)
@@ -185,12 +185,14 @@ class TwoShotBrdfData(Dataset):
                 # cam1 = np.transpose(pyexr.open(str(path_to_folder / ParameterNames.INPUT_1_LDR)).get(), (2, 0, 1))
                 cam1 = read_image(str(path_to_folder / ParameterNames.INPUT_1_LDR.value), False)
                 cam1 = TwoShotBrdfData.process_input_image(cam1)
+            return np.transpose(cam1, (2, 0, 1))
                 
         elif par_name == ParameterNames.INPUT_2:
             # cam2 = np.transpose(pyexr.open(str(path_to_folder / ParameterNames.INPUT_2)).get(), (2, 0, 1))
             cam2 = read_image(str(path_to_folder / ParameterNames.INPUT_2.value), False)
             cam2 = TwoShotBrdfData.process_input_image(cam2)
-            
+            return np.transpose(cam2, (2, 0, 1))
+        
         elif par_name == ParameterNames.MASK: # DONE
             # mask = load_mono(path_to_folder / ParameterNames.MASK)[np.newaxis, ...]
             mask = read_image(str(path_to_folder / ParameterNames.MASK.value), True)
@@ -199,18 +201,19 @@ class TwoShotBrdfData(Dataset):
             mask = erosion(
                 mask[..., 0], disk(3)
             )  # Apply a erosion (channels need to be removed)
-            return np.expand_dims(mask, -1)  # And added back
+            # mask = np.expand_dims(mask, -1) # And added back
+            return mask[np.newaxis, ...]
             
         elif par_name == ParameterNames.DEPTH: # DONE
             # depth = pyexr.open(str(path_to_folder / ParameterNames.DEPTH)).get()[np.newaxis, :, :, 0]
             depth = read_image(str(path_to_folder / ParameterNames.DEPTH.value), True)
             depth = compressDepth(depth)
-            return depth
+            return depth[np.newaxis, :, :, 0]
         
         elif par_name == ParameterNames.NORMAL: # DONE
             # normal = np.transpose(pyexr.open(str(path_to_folder / ParameterNames.NORMAL)).get(), (2, 0, 1))
-            normal = read_image(str(path_to_folder / ParameterNames.NORMAL.value), True)
-            return normal
+            normal = read_image(str(path_to_folder / ParameterNames.NORMAL.value), False)
+            return np.transpose(normal, (2, 0, 1))  
             
         elif par_name == ParameterNames.SGS: # DONE
             sgs = np.load(path_to_folder / ParameterNames.SGS.value).astype(np.float32)
@@ -219,17 +222,19 @@ class TwoShotBrdfData(Dataset):
         elif par_name == ParameterNames.DIFFUSE: # DONE
             # diffuse = np.transpose(load_rgb(path_to_folder / "diffuse.png"), (2, 0, 1))
             diffuse = read_image(str(path_to_folder / ParameterNames.DIFFUSE.value), False)
-            return diffuse
+            return np.transpose(diffuse, (2, 0, 1))  
             
         elif par_name == ParameterNames.SPECULAR: # DONE
             # specular = np.transpose(load_rgb(path_to_folder / "specular.png"), (2, 0, 1))
             specular = read_image(str(path_to_folder / ParameterNames.SPECULAR.value), False)
-            return specular
+            return np.transpose(specular, (2, 0, 1))  
         
         elif par_name == ParameterNames.ROUGHNESS: # DONE
             # roughness = load_mono(path_to_folder / "roughness.png")[np.newaxis, :, :]
             roughness = read_image(str(path_to_folder / ParameterNames.ROUGHNESS.value), False)
-            return roughness
+            return roughness[np.newaxis, :, :]
+        else:
+            raise Exception("Parameter name not available!")
         
     @staticmethod
     def move_batch_to_device(batch, device):
@@ -278,5 +283,5 @@ class TwoShotBrdfData(Dataset):
 
 
 if __name__ == "__main__":
-    data = TwoShotBrdfData(split="overfit", mode="shape")
+    data = TwoShotBrdfData(split="overfit", training=True, mode="shape")
     print("test")

@@ -54,7 +54,7 @@ def read_image(path: str, gray: bool = False) -> np.ndarray:
     hdr = _is_hdr(path)
     # Read image
     if hdr:
-        print(path)
+        # print(path)
         img = pyexr.open(path).get()
     else:
         img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
