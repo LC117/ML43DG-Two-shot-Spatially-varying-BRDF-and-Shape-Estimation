@@ -58,7 +58,6 @@ class TwoShotBrdfData(Dataset):
         
         self.training = training # Set to False for inference!
 
-
     def __getitem__(self, index):
         """
         PyTorch requires you to provide a getitem implementation for your dataset.

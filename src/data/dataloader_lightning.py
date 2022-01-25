@@ -1,7 +1,7 @@
 import imp
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader
-from data._dataloader import TwoShotBrdfData
+from src.data._dataloader import TwoShotBrdfData
 
 class TwoShotBrdfDataLightning(pl.LightningDataModule):
     """ Dummy extension to the PyTorch module to facilitate usage with Lightning's Trainer()
