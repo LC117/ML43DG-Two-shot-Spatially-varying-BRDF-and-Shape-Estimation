@@ -31,17 +31,17 @@ class TwoShotBrdfData(Dataset):
     }
 
     items_prefixes = {
-        "train" :       "CVPR20TwoShotBRDFAndShapeDataset/training/",
-        "val" :         "CVPR20TwoShotBRDFAndShapeDataset/training/",
-        "test" :        "CVPR20TwoShotBRDFAndShapeDataset/testing/",
-        "overfit" :     "CVPR20TwoShotBRDFAndShapeDataset/overfit/"
+        "train" :       "CVPR20-TwoShotBRDFAndShapeDataset/training/",
+        "val" :         "CVPR20-TwoShotBRDFAndShapeDataset/training/",
+        "test" :        "CVPR20-TwoShotBRDFAndShapeDataset/testing/",
+        "overfit" :     "CVPR20-TwoShotBRDFAndShapeDataset/overfit/"
     }
     
-    def __init__(self, split, training, mode="all"):
+    def __init__(self, split, training, mode="joined"):
         """
         :param training: bool -> Set to False for inference, to True for training!
         :param split: one of 'train', 'val', 'test' or 'overfit' - for training, validation or overfitting split
-        :param mode: one of 'cams', 'shape', 'all' - We do not need to load all the data for training the first two networks
+        :param mode: one of 'inference', 'shape', 'illumination', 'svbrdf'/'joined' - We do not need to load all the data for training the first two networks
         """
         super().__init__()
         
@@ -75,7 +75,7 @@ class TwoShotBrdfData(Dataset):
 
         path_to_folder = self._gen_path(index)
         res = {}
-        if self.mode in ["shape", "illumination", "svbrdf_or_joined"]:
+        if self.mode in ["inference", "shape", "illumination", "svbrdf", "joined"]:
             res.update({
                 "cam1" :        self.read_and_transform(path_to_folder, ParameterNames.INPUT_1),
                 "cam2" :        self.read_and_transform(path_to_folder, ParameterNames.INPUT_2),
@@ -88,12 +88,12 @@ class TwoShotBrdfData(Dataset):
                 "normal" :      self.read_and_transform(path_to_folder, ParameterNames.NORMAL)
             })
             
-        if self.mode in ["illumination", "svbrdf_or_joined"]:
+        if self.mode in ["inference", "illumination", "svbrdf", "joined"]:
             res.update({
                 "sgs" :         self.read_and_transform(path_to_folder, ParameterNames.SGS)
             })
             
-        if self.mode == "svbrdf_or_joined":
+        if self.mode in ["inference", "svbrdf", "joined"]:
             res.update({
                 # "flash" :       np.transpose(pyexr.open(str(item / "cam1_flash.exr")).get(), (2, 0, 1)), # SHOULD NOT BE USED -> cam1_env and cam1_flash need to be merged! -> use cam1
                 "diffuse" :     self.read_and_transform(path_to_folder, ParameterNames.DIFFUSE),
@@ -231,8 +231,8 @@ class TwoShotBrdfData(Dataset):
         
         elif par_name == ParameterNames.ROUGHNESS: # DONE
             # roughness = load_mono(path_to_folder / "roughness.png")[np.newaxis, :, :]
-            roughness = read_image(str(path_to_folder / ParameterNames.ROUGHNESS.value), False)
-            return roughness[np.newaxis, :, :]
+            roughness = read_image(str(path_to_folder / ParameterNames.ROUGHNESS.value), True)
+            return roughness[np.newaxis, :, :, 0]
         else:
             raise Exception("Parameter name not available!")
         

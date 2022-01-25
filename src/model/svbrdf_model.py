@@ -43,6 +43,7 @@ class SVBRDF_Network(pl.LightningModule):
         light_intensity_lumen = 45,
         num_sgs = 24,
         no_rendering_loss: bool = False,
+        device="cuda:0"
     ):
         super().__init__()
 
@@ -51,16 +52,16 @@ class SVBRDF_Network(pl.LightningModule):
         self.fov = fov
         self.distance_to_zero = distance_to_zero
 
-        self.camera_pos = torch.from_numpy(camera_pos.reshape([1, 3]))
-        self.light_pos = torch.from_numpy(light_pos.reshape([1, 3]))
+        self.camera_pos = torch.tensor(camera_pos.reshape([1, 3]), device=device)
+        self.light_pos = torch.tensor(light_pos.reshape([1, 3]), device=device)
         intensity = light_intensity_lumen / (4.0 * np.pi)
         light_col = light_color * intensity
-        self.light_col = torch.from_numpy(light_col.reshape([1, 3]))
+        self.light_col = torch.tensor(light_col.reshape([1, 3]), device=device)
 
         self.num_sgs = num_sgs
         self.no_rendering_loss = no_rendering_loss
 
-        self.axis_sharpness = torch.from_numpy(sg.setup_axis_sharpness(self.num_sgs))
+        self.axis_sharpness = torch.tensor(sg.setup_axis_sharpness(self.num_sgs), device=device)
 
         # Define model
         self.model = self.network_architecture()
@@ -138,8 +139,7 @@ class SVBRDF_Network(pl.LightningModule):
 
     def forward(self, x):
         cam1, cam2, mask, normal, depth = x
-        x = torch.cat([cam1, cam2, mask[:, :, :, None], normal, depth[:, :, :, None]], dim=-1)
-        x = torch.moveaxis(x, 3, 1)
+        x = torch.cat([cam1, cam2, mask, normal, depth], dim=1)
         
         model = self.model
         n_layers = int(log2(self.imgSize) - 2)
@@ -193,9 +193,9 @@ class SVBRDF_Network(pl.LightningModule):
     def general_step(self, batch, batch_idx):
         cam1, cam2, mask, normal, depth, sgs = batch["cam1"], batch["cam2"], batch["mask"], batch["normal"], batch["depth"], batch["sgs"]
         x = cam1, cam2, mask, normal, depth
-        gt_diffuse = torch.moveaxis(batch["diffuse"], 3, 1)
-        gt_specular = torch.moveaxis(batch["specular"], 3, 1)
-        gt_roughness = torch.unsqueeze(batch["roughness"], 1)
+        gt_diffuse = batch["diffuse"]
+        gt_specular = batch["specular"]
+        gt_roughness = batch["roughness"]
 
         # Perform a forward pass on the network with inputs
         out = self.forward(x)
@@ -209,8 +209,8 @@ class SVBRDF_Network(pl.LightningModule):
         loss_specular = loss_function(pred_specular, gt_specular)
         loss_roughness = loss_function(pred_roughness, gt_roughness)
 
-        #loss = (loss_diffuse + loss_specular + loss_roughness) / 3.0
-        #return loss
+        loss = (loss_diffuse + loss_specular + loss_roughness) / 3.0
+        return loss
 
         # Rendering Loss
         mask = mask[:, :, :, None]
@@ -303,23 +303,25 @@ class SVBRDF_Network(pl.LightningModule):
 if __name__ == "__main__":
     # Training
     network = SVBRDF_Network()
+    device = "cuda:0"
 
     trainer = pl.Trainer(
         weights_summary="full",
         max_epochs=100,
         progress_bar_refresh_rate=25,  # to prevent notebook crashes in Google Colab environments
-        # gpus=1, # Use GPU if available
+        gpus=1 if torch.cuda.is_available() else 0, # Use GPU if available
+        profiler="simple"
     )
 
-    data = TwoShotBrdfDataLightning(mode="all", overfit=True, num_workers=4)
+    data = TwoShotBrdfDataLightning(mode="svbrdf", overfit=True, num_workers=0)
     trainer.fit(network, train_dataloaders=data)
 
     test_sample = data.train_dataloader().dataset[0]
-    cam1 = torch.unsqueeze(torch.tensor(test_sample["cam1"]), 0)
-    cam2 = torch.unsqueeze(torch.tensor(test_sample["cam2"]), 0)
-    mask = torch.unsqueeze(torch.tensor(test_sample["mask"]), 0)
-    normal = torch.unsqueeze(torch.tensor(test_sample["normal"]), 0)
-    depth = torch.unsqueeze(torch.tensor(test_sample["depth"]), 0)
+    cam1 = torch.unsqueeze(torch.tensor(test_sample["cam1"]), 0, device=device)
+    cam2 = torch.unsqueeze(torch.tensor(test_sample["cam2"]), 0, device=device)
+    mask = torch.unsqueeze(torch.tensor(test_sample["mask"]), 0, device=device)
+    normal = torch.unsqueeze(torch.tensor(test_sample["normal"]), 0, device=device)
+    depth = torch.unsqueeze(torch.tensor(test_sample["depth"]), 0, device=device)
     x = cam1, cam2, mask, normal, depth
 
     out = network.forward(x)

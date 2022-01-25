@@ -189,7 +189,7 @@ if __name__ == "__main__":
         profiler="simple",
     )
 
-    data = TwoShotBrdfDataLightning(mode="illumination", overfit=False, num_workers=0)
+    data = TwoShotBrdfDataLightning(mode="illumination", overfit=True, num_workers=0)
 
     trainer.fit(model, train_dataloaders=data)
     
