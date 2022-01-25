@@ -183,13 +183,13 @@ if __name__ == "__main__":
 
     trainer = pl.Trainer(
         weights_summary="full",
-        max_epochs=1,
+        max_epochs=10,
         progress_bar_refresh_rate=25,  # to prevent notebook crashes in Google Colab environments
         gpus=1 if torch.cuda.is_available() else 0, # Use GPU if available
         profiler="simple",
     )
 
-    data = TwoShotBrdfDataLightning(mode="illumination", overfit=True, num_workers=0)
+    data = TwoShotBrdfDataLightning(mode="illumination", overfit=False, num_workers=0)
 
     trainer.fit(model, train_dataloaders=data)
     
