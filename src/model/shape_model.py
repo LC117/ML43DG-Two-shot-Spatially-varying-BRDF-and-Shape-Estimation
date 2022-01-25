@@ -7,12 +7,9 @@ import pytorch_lightning as pl
 import torch.nn.functional as F
 from matplotlib import pyplot as plt
 from torch import nn
-from math import log2
 
-import src.utils.rendering_layer as rl
-import src.utils.sg_utils as sg
 from src.data.dataloader_lightning import TwoShotBrdfDataLightning
-from src.utils.common_layers import INReLU, uncompressDepth, div_no_nan
+from src.utils.common_layers import INReLU, uncompressDepth, div_no_nan, binaerize_mask
 from src.utils.merge_conv import MergeConv
 
 from pathlib import Path
@@ -31,7 +28,8 @@ class ShapeNetwork(pl.LightningModule):
     https://github.com/NVlabs/two-shot-brdf-shape/blob/352201b66bfa5cd5e25111451a6583a3e7d499f0/models/illumination_network.py
     """
 
-    def __init__(self, imgSize: int = 256, base_nf: int = 32, downscale_steps: int = 4, consistency_loss: float = 0.5):
+    def __init__(self, imgSize: int = 256, base_nf: int = 32, downscale_steps: int = 4, consistency_loss: float = 0.5,
+                 device="cpu"):
         super().__init__()
         self.imgSize = imgSize
         self.base_nf = base_nf
@@ -39,13 +37,7 @@ class ShapeNetwork(pl.LightningModule):
         self.consistency_loss_factor = consistency_loss
         self.enable_consistency = consistency_loss != 0
 
-        #self.num_sgs = num_sgs  # spherical gaussian
-        #self.axis_sharpness = torch.tensor(sg.setup_axis_sharpness(num_sgs), dtype=torch.float32, device=self.device)
-
-        # env_net:
         # Define model:
-        #layers_needed = int(log2(256) - 2)  # 256 = cam1.shape[1].value
-
         # encoder:
         encoder_layers = []
         inp_channels = 4
@@ -84,14 +76,10 @@ class ShapeNetwork(pl.LightningModule):
         )
 
         # declare the sobelfilters as torch.FloatTensor type
-        self.sobel_x = torch.tensor([[1, 0, -1], [2, 0, -2], [1, 0, -1]], dtype=torch.float32, device=self.device).detach()
+        self.sobel_x = torch.tensor([[1, 0, -1], [2, 0, -2], [1, 0, -1]], dtype=torch.float32, device=device).detach()
         self.sobel_x = self.sobel_x.view((1, 1, 3, 3))
-        self.sobel_y = torch.tensor([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], dtype=torch.float32, device=self.device).detach()
+        self.sobel_y = torch.tensor([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], dtype=torch.float32, device=device).detach()
         self.sobel_y = - self.sobel_y.view((1, 1, 3, 3))
-
-        #dx = F.conv2d(depth_inv, sobel_x, padding=1, stride=1)
-        #dy = F.conv2d(depth_inv, sobel_y, padding=1, stride=1)
-        self.conv_dx
 
         return
 
@@ -109,18 +97,22 @@ class ShapeNetwork(pl.LightningModule):
         normal = x[:, 0:3, :, :] * 2 - 1
         normal = normal / torch.norm(normal, dim=1, keepdim=True)
         normal = (normal * 0.5 + 0.5) * mask
-        
-        depth = x[:, 3:4, :, :] * mask  # + (1 - mask) * torch.ones_like(x)
+
+        # calculate the mean depth of the complete depth image
+        depth = x[:, 3:4, :, :] * mask# + (1 - mask)
 
         return normal, depth
 
     def masked_loss(self, pred, target, mask, loss):
-        
-        pred = pred * mask
-        target = target * mask
+        _mask = binaerize_mask(mask)
+        # print("sum", torch.sum(_mask * (1 - _mask)), "sum", torch.sum(_mask), "sum", torch.sum(pred * _mask))
+        pred = pred * _mask
+        target = target * _mask
+        # count how many non-zero elements are in the mask
+        n_nonzero = _mask.sum()
         loss = loss(pred, target)
         
-        return loss
+        return loss / n_nonzero
 
     def configure_optimizers(self):
         # half learning rate after half of the epochs:
@@ -149,20 +141,17 @@ class ShapeNetwork(pl.LightningModule):
         normal, depth = self.forward(x)
 
         # In the paper the following loss is a L2 loss, but the tf implementation uses L1:
-        normal_l1_loss = self.masked_loss(normal * 2 - 1, normal_gt * 2 - 1, mask, torch.nn.L1Loss())
-        depth_l1_loss = self.masked_loss(depth, depth_gt, mask, torch.nn.L1Loss())
+        normal_l1_loss = self.masked_loss(normal * 2 - 1, normal_gt * 2 - 1, mask, torch.nn.L1Loss(reduction="sum"))
+        depth_l1_loss = self.masked_loss(depth, depth_gt, mask, torch.nn.L1Loss(reduction="sum"))
         consistency_loss = 0
         
         if self.enable_consistency:
-            
             near = uncompressDepth(1)
             far = uncompressDepth(0)
             d = uncompressDepth(depth)
             depth_inv = div_no_nan(d - near, far - near)
 
             # calculate the gradient dx, dy and dz of the predicted depth map
-
-
             dx = F.conv2d(depth_inv, self.sobel_x, padding=1, stride=1).detach()
             dy = F.conv2d(depth_inv, self.sobel_y, padding=1, stride=1).detach()
 
@@ -175,7 +164,8 @@ class ShapeNetwork(pl.LightningModule):
             cn = cn * 0.5 + 0.5
             
             # In the paper the following loss is a L1 loss, but the tf implementation uses L2:
-            consistency_loss = self.consistency_loss_factor * self.masked_loss(cn, normal, mask, torch.nn.MSELoss())
+            consistency_loss = self.consistency_loss_factor * \
+                               self.masked_loss(cn, normal, mask, torch.nn.MSELoss(reduction="sum"))
 
         shape_loss = depth_l1_loss + normal_l1_loss + consistency_loss
 
@@ -228,6 +218,8 @@ class ShapeNetwork(pl.LightningModule):
 
 if __name__ == "__main__":
     # Training:
+    numGPUs = 1
+    device = "cuda:0" if numGPUs else "cpu"
 
     resume_from_checkpoint = None
     resume_training = False
@@ -239,24 +231,24 @@ if __name__ == "__main__":
         model = ShapeNetwork.load_from_checkpoint(
             checkpoint_path=str(ckpt_path))
     else:
-        model = ShapeNetwork(consistency_loss=0.5)  # downscale_steps=2, base_nf=4)
+        model = ShapeNetwork(consistency_loss=0.5, device=device)  # downscale_steps=2, base_nf=4)
 
     trainer = pl.Trainer(
         #weights_summary="full",
-        max_epochs=20,
+        max_epochs=50,
         progress_bar_refresh_rate=25,  # to prevent notebook crashes in Google Colab environments
-        #gpus=1,  # Use GPU if available
+        gpus=numGPUs,  # Use GPU if available
         profiler="simple",
-        resume_from_checkpoint=resume_from_checkpoint,
+        #resume_from_checkpoint=resume_from_checkpoint,
         #precision=16,
     )
 
-    data = TwoShotBrdfDataLightning(mode="shape", overfit=True, num_workers=4, batch_size=8, persistent_workers=True, pin_memory=True)
+    data = TwoShotBrdfDataLightning(mode="shape", overfit=True, num_workers=0, batch_size=8, persistent_workers=False, pin_memory=True)
 
     trainer.fit(model, train_dataloaders=data)
 
     test_sample = data.train_dataloader().dataset[1]
-    print("test sample", test_sample.keys(), test_sample["mask"].shape)
+    # print("test sample", test_sample.keys(), test_sample["mask"].shape, set(list(test_sample["mask"].flatten())))
     # remove depth and normal from the test sample dict
     depth_gt = test_sample.pop("depth").squeeze(0)
     normal_gt = np.transpose(test_sample.pop("normal"), (1, 2, 0))
@@ -265,7 +257,7 @@ if __name__ == "__main__":
     test_sample["cam2"] = torch.Tensor(test_sample["cam2"][None, ...])
     test_sample["mask"] = torch.Tensor(test_sample["mask"][None, ...])
     normal, depth = model.forward((test_sample["cam1"], test_sample["cam2"], test_sample["mask"]))
-    #print("out", out.shape)
+    # print("out", out.shape)
 
     normal = normal.permute(0, 2, 3, 1).squeeze(0)
     depth = depth.squeeze(0).squeeze(0)

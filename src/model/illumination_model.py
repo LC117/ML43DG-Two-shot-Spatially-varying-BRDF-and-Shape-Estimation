@@ -30,7 +30,7 @@ class IlluminationNetwork(pl.LightningModule):
         self.imgSize = imgSize
         self.base_nf = base_nf
         self.num_sgs = num_sgs  # spherical gaussian
-        self.axis_sharpness = torch.tensor(sg.setup_axis_sharpness(num_sgs), dtype=torch.float32)
+        self.axis_sharpness = torch.tensor(sg.setup_axis_sharpness(num_sgs), dtype=torch.float32, device="cuda:0")
 
         # env_net:
         # Define model:
@@ -180,12 +180,13 @@ if __name__ == "__main__":
 
     trainer = pl.Trainer(
         weights_summary="full",
-        max_epochs=1000,
+        max_epochs=1,
         progress_bar_refresh_rate=25,  # to prevent notebook crashes in Google Colab environments
-        # gpus=1, # Use GPU if available
+        gpus=1, # Use GPU if available
+        profiler="simple",
     )
 
-    data = TwoShotBrdfDataLightning(mode="illumination", overfit=True)
+    data = TwoShotBrdfDataLightning(mode="illumination", overfit=False, num_workers=4)
 
     trainer.fit(model, train_dataloaders=data)
     

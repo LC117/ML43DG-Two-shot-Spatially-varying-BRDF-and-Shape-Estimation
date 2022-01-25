@@ -159,7 +159,7 @@ class JointNetwork(pl.LightningModule):
         
         in_channels = 256
         self.decoder_layers = []
-        for i in range(1):#layers_needed):
+        for i in range(layers_needed):
             inv_i = layers_needed - i
             nf = min(self.base_nf * (2 ** (inv_i - 1)), 512)
             layer = nn.Sequential(
@@ -183,7 +183,7 @@ class JointNetwork(pl.LightningModule):
                     kernel_size=3,
                     padding=1),
                 INReLU(nf))
-            #self.decoder_layers.append(layer)
+            self.decoder_layers.append(layer)
 
         layer = nn.Sequential(
             torch.nn.Conv2d(
@@ -192,7 +192,7 @@ class JointNetwork(pl.LightningModule):
                 kernel_size=5,
                 padding=2),
             torch.nn.Sigmoid())
-        #self.decoder_layers.append(layer)
+        self.decoder_layers.append(layer)
         self.decoder = nn.Sequential(*self.decoder_layers)
 
         """
@@ -239,16 +239,16 @@ class JointNetwork(pl.LightningModule):
 
     def forward(self, x):
         flash, mask, normal, depth, sgs, rerender_img, roughness, diffuse, specular = x
-        onesTensor = torch.ones_like(mask[..., None])
-        sgs_expanded = sgs.reshape(-1, 1, 1, sgs.shape[1] * sgs.shape[2])
+        onesTensor = torch.ones_like(mask)
+        sgs_expanded = sgs.reshape(-1, sgs.shape[1] * sgs.shape[2], 1, 1)
         sgs_to_add = onesTensor * sgs_expanded
         #print("Shapes", flash.shape, mask.unsqueeze_(3).shape, normal.shape, depth.unsqueeze_(3).shape, sgs_to_add.shape,
         #      rerender_img.shape, roughness.unsqueeze_(3).shape, diffuse.shape, specular.shape)
-        x = torch.cat([flash, mask.unsqueeze_(3), normal, depth.unsqueeze_(3), sgs_to_add, rerender_img, roughness.unsqueeze_(3), diffuse, specular], dim=3)
-        x = torch.permute(x, (0, 3, 1, 2))
+        x = torch.cat([flash, mask, normal, depth, sgs_to_add, rerender_img, roughness, diffuse, specular], dim=1)
+        #x = torch.permute(x, (0, 3, 1, 2))
         print("x shape", x.shape)
 
-        _mask = mask#.clone()
+        #_mask = mask#.clone()
         #_mask.unsqueeze_(1)
 
         ##cam1_cf = torch.permute(flash, (0, 3, 1, 2))
@@ -271,42 +271,22 @@ class JointNetwork(pl.LightningModule):
         #out = self.model(x)
         #out = out.reshape(-1, self.imgSize, self.imgSize, 4)
 
-        #x = self.encoder((cam1_cf, cam2_cf, None))
-        #_, _, x = self.decoder(x)
-        #x = self.geom_estimation(x)
-
         x = self.encoder(x)
         print("x shape", x.shape)
         x = self.decoder(x)
+        print("x shape", x.shape)
 
-        x = x * _mask + (1 - _mask) * torch.ones_like(x)
+        x = x * mask# + (1 - _mask) * torch.ones_like(x)
 
-        #x = self.enc_conv2d_block(x)
-        #x = self.env_map(x)
-
-        #sgs = (x * MAX_VAL).view(-1, self.num_sgs, 3)
-
-        #out = x.reshape(-1, self.imgSize, self.imgSize, 4)
-
-        x = torch.permute(x, (0, 2, 3, 1))
-
-        x_n = x[:, :, :, 1:4] * 2 - 1
-        x_normalized = x_n / torch.norm(x_n, dim=-1, keepdim=True)
-        x[:, :, :, 1:4] = x_normalized * 0.5 + 0.5
+        x_n = x[:, 0:3, :, :] * 2 - 1
+        x_normalized = x_n / torch.norm(x_n, dim=1, keepdim=True)
+        x[:, 0:3, :, :] = x_normalized * 0.5 + 0.5
 
         return x
         #return cam1#, mask
 
-    def masked_loss(self, pred, target, mask, loss, channel_first=True):
-        # make a copy of the mask
+    def masked_loss(self, pred, target, mask, loss):
         _mask = mask
-        #if len(pred.shape) == 4:
-        #    _mask = mask.clone()
-        #    if channel_first:
-        #        _mask.unsqueeze_(1)
-        #    else:
-        #        _mask.unsqueeze_(-1)
-        #print("mask shape", _mask.shape, "pred shape", pred.shape)
         pred = pred * _mask
         target = target * _mask
         loss = loss(pred, target)
@@ -331,7 +311,6 @@ class JointNetwork(pl.LightningModule):
     def general_step(self, batch, batch_idx):
         # cam1, cam2, mask
         mask = batch["mask"]
-        mask3 = mask.clone().unsqueeze_(-1)
         #x = batch["cam1"], batch["cam2"], batch["mask"]
         # targets = batch["normal"], batch["depth"].reshape(-1, self.imgSize, self.imgSize, 1)
         #normal_gt, depth_gt = batch["normal"], batch["depth"]#.unsqueeze(-1)
@@ -339,15 +318,15 @@ class JointNetwork(pl.LightningModule):
         # x = cam1 + mask + normal + depth + sgs + rerender_img + roughness + diffuse + specular
         batch["rerender_img"] = batch["cam1"]  # TODO: remove this line
         x = batch["flash"], batch["mask"], batch["normal"], batch["depth"], batch["sgs"], batch["rerender_img"], batch["roughness"], batch["diffuse"], batch["specular"]
-        targets = batch["depth"].unsqueeze(-1), batch["normal"], batch["roughness"].unsqueeze(-1), batch["diffuse"], batch["specular"]
+        targets = batch["normal"], batch["depth"], batch["roughness"], batch["diffuse"], batch["specular"]
 
         # Perform a forward pass on the network with inputs
         out = self.forward(x)
 
         #targets = normal_gt, depth_gt.unsqueeze(-1)
-        targets_joined = torch.cat(targets, dim=-1)
+        targets_joined = torch.cat(targets, dim=1)
 
-        print("out shape", out.shape, "targets shape", targets_joined.shape)
+        #print("out shape", out.shape, "targets shape", targets_joined.shape)
 
         """
         #print("out shape", out.shape, mask.shape)
@@ -407,7 +386,7 @@ class JointNetwork(pl.LightningModule):
         """
 
         #shape_loss = torch.nn.MSELoss()(out, targets_joined)
-        shape_loss = self.masked_loss(out, targets_joined, mask3, torch.nn.MSELoss(), channel_first=False)
+        shape_loss = self.masked_loss(out, targets_joined, mask, torch.nn.MSELoss())
 
         return shape_loss
 
@@ -463,9 +442,9 @@ if __name__ == "__main__":
 
     trainer = pl.Trainer(
         # weights_summary="full",
-        max_epochs=2,
+        max_epochs=5,
         progress_bar_refresh_rate=25,  # to prevent notebook crashes in Google Colab environments
-        # gpus=1,  # Use GPU if available
+        gpus=1,  # Use GPU if available
         profiler="simple",
         #precision=16,
     )
@@ -477,19 +456,21 @@ if __name__ == "__main__":
     test_sample = data.train_dataloader().dataset[1]
     print("test sample", test_sample.keys(), test_sample["mask"].shape)
     # remove depth and normal from the test sample dict
-    depth_gt = test_sample["depth"]
-    normal_gt = test_sample["normal"]
+    depth_gt = torch.tensor(test_sample["depth"][None, ...])
+    normal_gt = torch.tensor(test_sample["normal"][None, ...])
+    test_sample["depth"] = torch.tensor(test_sample["depth"][None, ...])
+    test_sample["normal"] = torch.tensor(test_sample["normal"][None, ...])
     # make the cam1, cam2 and mask 4 dimensional
-    test_sample["cam1"] = torch.Tensor(test_sample["cam1"][None, ...])
-    test_sample["cam2"] = torch.Tensor(test_sample["cam2"][None, ...])
-    test_sample["mask"] = torch.Tensor(test_sample["mask"][None, ...])
+    test_sample["cam1"] = torch.tensor(test_sample["cam1"][None, ...])
+    test_sample["cam2"] = torch.tensor(test_sample["cam2"][None, ...])
+    test_sample["mask"] = torch.tensor(test_sample["mask"][None, ...])
     # x = batch["flash"], batch["mask"], batch["normal"], batch["depth"], batch["sgs"], batch["rerender_img"], batch["roughness"], batch["diffuse"], batch["specular"]
-    test_sample["roughness"] = torch.Tensor(test_sample["roughness"][None, ...])
-    test_sample["diffuse"] = torch.Tensor(test_sample["diffuse"][None, ...])
-    test_sample["specular"] = torch.Tensor(test_sample["specular"][None, ...])
-    test_sample["sgs"] = torch.Tensor(test_sample["sgs"][None, ...])
+    test_sample["roughness"] = torch.tensor(test_sample["roughness"][None, ...])
+    test_sample["diffuse"] = torch.tensor(test_sample["diffuse"][None, ...])
+    test_sample["specular"] = torch.tensor(test_sample["specular"][None, ...])
+    test_sample["sgs"] = torch.tensor(test_sample["sgs"][None, ...])
     #test_sample["rerender_img"] = torch.Tensor(test_sample["rerender_img"][None, ...])
-    test_sample["flash"] = torch.Tensor(test_sample["flash"][None, ...])
+    test_sample["flash"] = torch.tensor(test_sample["flash"][None, ...])
     x = test_sample["flash"], test_sample["mask"], test_sample["normal"], test_sample["depth"], test_sample["sgs"],\
         test_sample["cam1"], test_sample["roughness"], test_sample["diffuse"], test_sample["specular"]
         # test_sample["rerender_img"], test_sample["roughness"], test_sample["diffuse"], test_sample["specular"]
@@ -501,44 +482,11 @@ if __name__ == "__main__":
     #out_np = torch.permute(out_np, [0, 2, 3, 1])
     out_np = np.reshape(out_np, (out_np.shape[1], out_np.shape[2], out_np.shape[3]))
     # targets = batch["normal"], batch["depth"].unsqueeze(-1), batch["roughness"].unsqueeze(-1), batch["diffuse"], batch["specular"]
-    depth = out_np[..., 0]
-    normal = out_np[..., 1:4]
-    roughness = out_np[..., 4]
-    diffuse = out_np[..., 5:8]
-    specular = out_np[..., 8:]
-
-    """
-    depth_tensor = torch.Tensor(depth_gt)
-    near = uncompressDepth(1)
-    far = uncompressDepth(0)
-    d = uncompressDepth(depth_tensor)
-    depth_tensor = div_no_nan(d - near, far - near)
-
-    sobel_x = torch.tensor([[1, 0, -1], [2, 0, -2], [1, 0, -1]], dtype=torch.float32).detach()
-    sobel_x = sobel_x.view((1, 1, 3, 3))
-    sobel_y = torch.tensor([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], dtype=torch.float32).detach()
-    sobel_y = -1. * sobel_y.view((1, 1, 3, 3))
-
-    dx = torch.nn.functional.conv2d(depth_tensor.view((1, 1, 256, 256)), sobel_x, padding=1, stride=1)
-    dy = torch.nn.functional.conv2d(depth_tensor.view((1, 1, 256, 256)), sobel_y, padding=1, stride=1)
-
-    texel_size = 1.0 / 256
-    # create a tensor of ones of shape and type of out[..., 0]
-    ones = torch.ones_like(dx)
-    dz = ones * texel_size * 2.0
-
-    # n = tf.concat([dx, dy, dz], -1)
-    n = torch.cat([dx, dy, dz], dim=1)
-    # n = normalize(n)
-    print("norm", torch.norm(n, dim=1, keepdim=True).shape)
-    n = n / torch.norm(n, dim=1, keepdim=True)
-    n = n * 0.5 + 0.5
-
-    n = n.squeeze(0)
-    n = n.permute(1, 2, 0)
-    dx = dx.squeeze(0).squeeze(0)
-    dy = dy.squeeze(0).squeeze(0)
-    """
+    depth = out_np[4, ...],
+    normal = np.transpose(out_np[0:3, ...], (1, 2, 0))
+    roughness = out_np[4, ...]
+    diffuse = np.transpose(out_np[5:8, ...], (1, 2, 0))
+    specular = np.transpose(out_np[8:, ...], (1, 2, 0))
 
     # create a new folder Test_Results
     # and save the depth and normal maps
