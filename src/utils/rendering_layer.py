@@ -57,6 +57,11 @@ class RenderingLayer(nn.Module):
         # self.data_format = layer_helper.normalize_data_format(data_format)
         self.data_format = data_format  
 
+        device = "cuda:0"
+        if not torch.cuda.is_available():
+            device = "cpu"
+        self.device__ = device
+
         self.build(output_shape)
 
     def build(self, output_shape):
@@ -88,7 +93,7 @@ class RenderingLayer(nn.Module):
         #     coord = chwToHwc(coord)
 
         assert coord.dtype == np.float32
-        self.base_mesh = torch.from_numpy(np.expand_dims(coord, 0))
+        self.base_mesh = torch.tensor(np.expand_dims(coord, 0), device=self.device__)
         assert self.base_mesh.dtype == torch.float32
 
     def call(
@@ -159,7 +164,7 @@ class RenderingLayer(nn.Module):
         l = self._normalize(l_vec)
         h = self._normalize(l + v)
 
-        axis_flip = torch.tensor([-1, 1, -1], dtype=torch.float32)
+        axis_flip = torch.tensor([-1, 1, -1], dtype=torch.float32, device=self.device__)
         axis_flip = torch.reshape(axis_flip, reshapeShape)
         n = self._normalize(normal * 2.0 - 1.0) * axis_flip
 
@@ -485,7 +490,7 @@ class RenderingLayer(nn.Module):
         output = torch.where(
             self._to_vec3(isclose(vdh * ndv, zero_vec)), shadowed, output
         )
-        return torch.maximum(output, torch.zeros(output.shape))
+        return torch.maximum(output, torch.zeros(output.shape, device=self.device__))
 
     def sg_eval(
         self,

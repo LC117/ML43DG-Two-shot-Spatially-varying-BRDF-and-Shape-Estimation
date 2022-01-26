@@ -50,6 +50,7 @@ class SVBRDF_Network(pl.LightningModule):
         device = "cuda:0"
         if not torch.cuda.is_available():
             device = "cpu"
+        self.device__ = device
         
         self.base_nf = base_nf
         self.imgSize = imgSize
@@ -134,6 +135,9 @@ class SVBRDF_Network(pl.LightningModule):
             Sigmoid()
         )
 
+    def _masked_loss(self, loss, mask):
+        return torch.where(torch.less_equal(mask, 1e-5), torch.zeros_like(loss), loss)
+
     def _get_same_padding(self, in_height, in_width, kernel_size, strides):
         out_height = ceil(float(in_height) / float(strides[0]))
         out_width  = ceil(float(in_width) / float(strides[1]))
@@ -212,7 +216,22 @@ class SVBRDF_Network(pl.LightningModule):
             return loss
         
         # TODO With rendering loss!
-        loss = (loss_diffuse + loss_specular + loss_roughness) / 3.0
+        mask = mask[:, 0:1]
+        repeat = [1 for _ in range(len(mask.shape))]
+        repeat[1] = 3
+        mask3 = torch.tile(mask, repeat)
+        batch_size = cam1.shape[0]
+
+        rendered = self.render(pred_diffuse, pred_specular, pred_roughness, normal, depth, sgs, mask3)
+
+        rerendered_log = torch.clip(torch.log(1.0 + torch.relu(rendered)), 0.0, 13.0)
+        rerendered_log = torch.nan_to_num(rerendered_log)
+        loss_log = torch.clip(torch.log(1.0 + torch.relu(cam1)), 0.0, 13.0)
+        loss_log = torch.nan_to_num(loss_log)
+        l1_err = loss_function(loss_log, rerendered_log)
+        rerendered_loss = torch.mean(self._masked_loss(l1_err, mask3))
+
+        loss = (loss_diffuse + loss_specular + loss_roughness + rerendered_loss) / 4.0
         return loss
     
     def general_end(self, outputs, mode):
@@ -237,12 +256,53 @@ class SVBRDF_Network(pl.LightningModule):
         avg_loss = self.general_end(outputs, "val_loss")
         self.log("val_loss", avg_loss)
         return {"val_loss": avg_loss}
+    
+    def render(self, diffuse, specular, roughness, normal, depth, sgs, mask3):
+        sdiff = apply_mask(diffuse, mask3, "safe_diffuse", undefined=0.5)
+        sspec = apply_mask(specular, mask3, "safe_specular", undefined=0.04)
+        srogh = apply_mask(roughness, mask3[:, 0:1], "safe_roughness", undefined=0.4)
+
+        normal_scale_ = torch.moveaxis(torch.ones_like(normal), 1, 3)
+        normal_scale_ = normal_scale_ * torch.tensor([0.5, 0.5, 1.0], device=self.device__)
+        normal_scale_ = torch.moveaxis(normal_scale_, 3, 1)
+        snormal = torch.where(
+            torch.less_equal(mask3, 1e-5),
+            normal_scale_,
+            #torch.ones_like(normal) * torch.tensor([0.5, 0.5, 1.0], device=self.device__),
+            normal
+        )
+        batch_size = diffuse.shape[0]
+        axis_sharpness = torch.tile(
+            torch.unsqueeze(self.axis_sharpness, 0), (batch_size, 1, 1)
+        )
+        sgs_joined = torch.cat((sgs, axis_sharpness), -1)
+        renderer = RenderingLayer(
+            self.fov,
+            self.distance_to_zero,
+            torch.Size((-1, 3, self.imgSize, self.imgSize)),
+        )
+        sgs_joined = torch.swapaxes(sgs_joined, 1, 2)
+        rerendered = renderer.call(
+            sdiff,
+            sspec,
+            srogh,
+            snormal,
+            depth,  # Depth is still in 0 - 1 range
+            mask3[:, 0:1],
+            self.camera_pos,
+            self.light_pos,
+            self.light_col,
+            sgs_joined,
+        )
+        rerendered = apply_mask(rerendered, mask3, "masked_rerender")
+        rerendered = torch.nan_to_num(rerendered)
+        return rerendered
 
 
 if __name__ == "__main__":
     print("================ SV-BRDF Network ================")
     # Training
-    model = SVBRDF_Network(no_rendering_loss = True)
+    model = SVBRDF_Network(no_rendering_loss = False)
 
     trainer = pl.Trainer(
         weights_summary="full",
@@ -252,5 +312,5 @@ if __name__ == "__main__":
         profiler="simple",
     )
 
-    data = TwoShotBrdfDataLightning(mode="svbrdf", overfit=True, num_workers=0)
+    data = TwoShotBrdfDataLightning(mode="svbrdf", overfit=True, num_workers=0, batch_size=1)
     trainer.fit(model, train_dataloaders=data)
