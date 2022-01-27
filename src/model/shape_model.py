@@ -6,6 +6,7 @@ import pytorch_lightning as pl
 
 import torch.nn.functional as F
 from matplotlib import pyplot as plt
+from PIL import Image
 from torch import nn
 
 from src.data.dataloader_lightning import TwoShotBrdfDataLightning
@@ -99,7 +100,7 @@ class ShapeNetwork(pl.LightningModule):
         normal = (normal * 0.5 + 0.5) * mask
 
         # calculate the mean depth of the complete depth image
-        depth = x[:, 3:4, :, :] * mask + (1 - mask)
+        depth = x[:, 3:4, :, :] * mask# + (1 - mask)
 
         return normal, depth
 
@@ -109,10 +110,10 @@ class ShapeNetwork(pl.LightningModule):
         pred = pred * _mask
         target = target * _mask
         # count how many non-zero elements are in the mask
-        n_nonzero = _mask.sum()
+        #n_nonzero = _mask.sum()
         loss = loss(pred, target)
         
-        return loss / n_nonzero
+        return loss# / n_nonzero
 
     def configure_optimizers(self):
         # half learning rate after half of the epochs:
@@ -141,8 +142,8 @@ class ShapeNetwork(pl.LightningModule):
         normal, depth = self.forward(x)
 
         # In the paper the following loss is a L2 loss, but the tf implementation uses L1:
-        normal_l1_loss = self.masked_loss(normal * 2 - 1, normal_gt * 2 - 1, mask, torch.nn.L1Loss(reduction="sum"))
-        depth_l1_loss = self.masked_loss(depth, depth_gt, mask, torch.nn.L1Loss(reduction="sum"))
+        normal_l1_loss = self.masked_loss(normal * 2 - 1, normal_gt * 2 - 1, mask, torch.nn.L1Loss())
+        depth_l1_loss = self.masked_loss(depth, depth_gt, mask, torch.nn.L1Loss())
         consistency_loss = 0
         
         if self.enable_consistency:
@@ -165,7 +166,7 @@ class ShapeNetwork(pl.LightningModule):
             
             # In the paper the following loss is a L1 loss, but the tf implementation uses L2:
             consistency_loss = self.consistency_loss_factor * \
-                               self.masked_loss(cn, normal, mask, torch.nn.MSELoss(reduction="sum"))
+                               self.masked_loss(cn, normal, mask, torch.nn.MSELoss())
 
         shape_loss = depth_l1_loss + normal_l1_loss + consistency_loss
 
@@ -245,9 +246,9 @@ if __name__ == "__main__":
 
     data = TwoShotBrdfDataLightning(mode="shape", overfit=True, num_workers=0, batch_size=8, persistent_workers=False, pin_memory=True)
 
-    # trainer.fit(model, train_dataloaders=data)
+    trainer.fit(model, train_dataloaders=data)
 
-    test_sample = data.train_dataloader().dataset[1]
+    test_sample = data.train_dataloader().dataset[0]
     # print("test sample", test_sample.keys(), test_sample["mask"].shape, set(list(test_sample["mask"].flatten())))
     # remove depth and normal from the test sample dict
     depth_gt = test_sample.pop("depth").squeeze(0)
@@ -306,8 +307,14 @@ if __name__ == "__main__":
 
     # save cam1 and cam2
     print("cam1", test_sample["cam1"].shape, test_sample["cam2"].shape)
-    plt.imsave(result_dir + "cam1.png", test_sample["cam1"][0].detach().cpu().numpy()[0, ..., ::-1])
-    plt.imsave(result_dir + "cam2.png", test_sample["cam2"][0].detach().cpu().numpy()[0, ..., ::-1])
+    cam1 = test_sample["cam1"].squeeze(0).detach().cpu().numpy()
+    cam2 = test_sample["cam2"].squeeze(0).detach().cpu().numpy()
+    cam1 = np.transpose(cam1, (1, 2, 0))
+    cam2 = np.transpose(cam2, (1, 2, 0))
+    plt.imsave(result_dir + "cam1.png", cam1)
+    plt.imsave(result_dir + "cam2.png", cam2)
+    #Image.fromarray(np.uint8(cam1 * 255)).show()
+    #Image.fromarray(np.uint8(cam2 * 255)).show()
 
     # save mask
     mask_img = test_sample["mask"][0].detach().cpu().numpy()[0, ...]
