@@ -408,28 +408,28 @@ if __name__ == "__main__":
         os.makedirs("Test_Results/joint")
 
     # save the depth map using matplotlib
-    plt.imsave("Test_Results/joint/depth.png", depth, cmap="gray")
+    plt.imsave("Test_Results/joint/depth.png", depth, cmap="gray", vmin=0, vmax=1)
 
     # save the normal map as rgb using matplotlib
-    plt.imsave("Test_Results/joint/normal.png", normal)
+    plt.imsave("Test_Results/joint/normal.png", normal, vmin=0, vmax=1)
 
     # save the depth_gt and normal_gt using matplotlib
     normal_gt = np.transpose(normal_gt[0], (1, 2, 0))
     print("depth_gt", depth_gt.shape)
     print("normal_gt", normal_gt.shape)
-    plt.imsave("Test_Results/joint/depth_gt.png", depth_gt[0, 0, ...], cmap="gray")
+    plt.imsave("Test_Results/joint/depth_gt.png", depth_gt[0, 0, ...], cmap="gray", vmin=0, vmax=1)
     # convert normal_t to np array
     normal_gt = normal_gt.detach().cpu().numpy()
-    plt.imsave("Test_Results/joint/normal_gt.png", normal_gt )
+    plt.imsave("Test_Results/joint/normal_gt.png", normal_gt, vmin=0, vmax=1)
 
     # save the roughness map using matplotlib
-    plt.imsave("Test_Results/joint/roughness.png", roughness, cmap="gray")
+    plt.imsave("Test_Results/joint/roughness.png", roughness, cmap="gray", vmin=0, vmax=1)
 
     # save the diffuse map using matplotlib
-    plt.imsave("Test_Results/joint/diffuse.png", diffuse, cmap="gray")
+    plt.imsave("Test_Results/joint/diffuse.png", diffuse, cmap="gray", vmin=0, vmax=1)
 
     # save the specular map using matplotlib
-    plt.imsave("Test_Results/joint/specular.png", specular, cmap="gray")
+    plt.imsave("Test_Results/joint/specular.png", specular, cmap="gray", vmin=0, vmax=1)
 
 
     print("DONE")

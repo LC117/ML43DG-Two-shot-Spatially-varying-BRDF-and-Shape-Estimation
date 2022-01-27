@@ -7,6 +7,10 @@ __pycache__/
 src/data/CVPR20-TwoShotBRDFAndShapeDataset.zip
 src/data/CVPR20-TwoShotBRDFAndShapeDataset/
 
+# Results
+Test_Results/
+src/model/Test_Results/
+
 # C extensions
 *.so
 
@@ -137,3 +141,6 @@ dmypy.json
 
 # Lightning Logs
 lightning_logs/
+
+# pycharm
+.idea/
