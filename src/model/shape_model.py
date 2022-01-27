@@ -100,7 +100,7 @@ class ShapeNetwork(pl.LightningModule):
         normal = (normal * 0.5 + 0.5) * mask
 
         # calculate the mean depth of the complete depth image
-        depth = x[:, 3:4, :, :] * mask # + (1 - mask)
+        depth = x[:, 3:4, :, :] * mask 
 
         return normal, depth
 
