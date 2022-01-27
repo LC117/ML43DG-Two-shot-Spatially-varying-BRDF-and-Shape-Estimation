@@ -99,7 +99,7 @@ class ShapeNetwork(pl.LightningModule):
         normal = (normal * 0.5 + 0.5) * mask
 
         # calculate the mean depth of the complete depth image
-        depth = x[:, 3:4, :, :] * mask# + (1 - mask)
+        depth = x[:, 3:4, :, :] * mask + (1 - mask)
 
         return normal, depth
 
@@ -235,7 +235,7 @@ if __name__ == "__main__":
 
     trainer = pl.Trainer(
         #weights_summary="full",
-        max_epochs=50,
+        max_epochs=2,
         progress_bar_refresh_rate=25,  # to prevent notebook crashes in Google Colab environments
         gpus=numGPUs,  # Use GPU if available
         profiler="simple",
@@ -245,7 +245,7 @@ if __name__ == "__main__":
 
     data = TwoShotBrdfDataLightning(mode="shape", overfit=True, num_workers=0, batch_size=8, persistent_workers=False, pin_memory=True)
 
-    trainer.fit(model, train_dataloaders=data)
+    # trainer.fit(model, train_dataloaders=data)
 
     test_sample = data.train_dataloader().dataset[1]
     # print("test sample", test_sample.keys(), test_sample["mask"].shape, set(list(test_sample["mask"].flatten())))
@@ -297,20 +297,32 @@ if __name__ == "__main__":
     dy = dy.squeeze(0).squeeze(0)
     """
 
+    result_dir = str(Path("Test_Results") / Path("shape_model")) + "/"
+
     # create a new folder Test_Results
     # and save the depth and normal maps
-    if not os.path.exists("Test_Results"):
-        os.makedirs("Test_Results")
+    if not os.path.exists(result_dir):
+        os.makedirs(result_dir)
+
+    # save cam1 and cam2
+    print("cam1", test_sample["cam1"].shape, test_sample["cam2"].shape)
+    plt.imsave(result_dir + "cam1.png", test_sample["cam1"][0].detach().cpu().numpy()[0, ..., ::-1])
+    plt.imsave(result_dir + "cam2.png", test_sample["cam2"][0].detach().cpu().numpy()[0, ..., ::-1])
+
+    # save mask
+    mask_img = test_sample["mask"][0].detach().cpu().numpy()[0, ...]
+    print("mask", mask_img.shape)
+    plt.imsave(result_dir + "mask.png", mask_img, cmap="gray")
 
     # save the depth map using matplotlib
-    plt.imsave("Test_Results/depth.png", depth, cmap="gray")
+    plt.imsave(result_dir + "depth.png", depth, cmap="gray")
 
     # save the normal map as rgb using matplotlib
-    plt.imsave("Test_Results/normal.png", normal)
+    plt.imsave(result_dir + "normal.png", normal)
 
     # save the depth_gt and normal_gt using matplotlib
-    plt.imsave("Test_Results/depth_gt.png", depth_gt, cmap="gray")
-    plt.imsave("Test_Results/normal_gt.png", normal_gt)
+    plt.imsave(result_dir + "depth_gt.png", depth_gt, cmap="gray")
+    plt.imsave(result_dir + "normal_gt.png", normal_gt)
 
     # print(dx.shape)
     # print(n.shape)
