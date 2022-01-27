@@ -100,7 +100,7 @@ class ShapeNetwork(pl.LightningModule):
         normal = (normal * 0.5 + 0.5) * mask
 
         # calculate the mean depth of the complete depth image
-        depth = x[:, 3:4, :, :] * binaerize_mask(mask)
+        depth = x[:, 3:4, :, :] * mask
 
         return normal, depth
 
@@ -143,7 +143,7 @@ class ShapeNetwork(pl.LightningModule):
 
         # In the paper the following loss is a L2 loss, but the tf implementation uses L1:
         normal_l1_loss = self.masked_loss(normal * 2 - 1, normal_gt * 2 - 1, mask, torch.nn.L1Loss())
-        depth_l1_loss = self.masked_loss(depth, depth_gt, mask, torch.nn.L1Loss())
+        depth_l1_loss = self.masked_loss( depth, depth_gt, mask, torch.nn.L1Loss())
         consistency_loss = 0
 
         if self.enable_consistency:
