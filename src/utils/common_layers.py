@@ -287,9 +287,9 @@ def preresnet_basicblock(
 
     layers.append(torch.nn.Conv2d(ch_out, ch_out, kernel_size=3, stride=1, padding=dilation, dilation=dilation))
 
-    layers.append(resnet_shortcut(ch_out, ch_out, stride, isDownsampling))
+    skip_layer = resnet_shortcut(ch_in, ch_out, stride, isDownsampling)
 
-    return torch.nn.Sequential(*layers)
+    return torch.nn.Sequential(*layers), skip_layer
 
 
 def preresnet_group(
@@ -304,8 +304,8 @@ def preresnet_group(
     withDropout: bool = False,
     addLongSkip = None, # : Optional[Tuple[int, tf.Tensor]] = None, TODO: add TypeHint
     getLongSkipFrom: Optional[int] = None,
-) -> torch.nn.ModuleList:
-# ) -> Union[tf.Tensor, Tuple[tf.Tensor, tf.Tensor]]:
+) -> Tuple[torch.nn.ModuleList, torch.nn.Module]:
+    # ) -> Union[tf.Tensor, Tuple[tf.Tensor, tf.Tensor]]:
     if addLongSkip and getLongSkipFrom:
         assert addLongSkip[0] != getLongSkipFrom
 
@@ -314,10 +314,7 @@ def preresnet_group(
     if dilation != 1:
         assert stride == 1
 
-    layers = nn.ModuleDict()
-
-    #layers = []
-    #torch_layers = []
+    module_list = nn.ModuleList()
 
     if addLongSkip is not None:
         addSkipAt, skipConn = addLongSkip
@@ -327,7 +324,7 @@ def preresnet_group(
     for i in range(0, count):
         # first block doesn't need activation
         print("chin", ch_in)
-        layer = block_func(
+        layer, skip_layer = block_func(
             ch_in,
             features,
             stride if i == 0 else 1,
@@ -336,10 +333,14 @@ def preresnet_group(
             dilation,
             withDropout,
         )
-        layers.append(layer)
+        module_list.append(layer)
+        module_list.append(skip_layer)
+        # layers.append(layer)
 
         ch_in = features
 
+        # this following part is implemented in the original, but never executed, so we skipped it
+        """
         if getLongSkipFrom is not None:
             if i == getLongSkipFrom:
                 skipConnection = layer
@@ -359,19 +360,21 @@ def preresnet_group(
             torch_layers.append(torch.nn.Sequential(*layers))
             # torch_layers.append((torch.nn.Sequential(*layers), "add"))
             layers.clear()
+        """
 
+    end_layer = nn.Identity(features)
     # end of each group need an extra activation
     if activation_function == "bnrelu":
-        layers.append(BNReLU(features))
+        end_layer = BNReLU(features)
     if activation_function == "inrelu":
-        layers.append(INReLU(features))
+        end_layer = INReLU(features)
 
     # torch_layers.append((torch.nn.Sequential(*layers), "end"))
-    torch_layers.append(torch.nn.Sequential(*layers))
-    module_list = nn.ModuleList(torch_layers)
+    #torch_layers.append(torch.nn.Sequential(*layers))
+    #module_list = nn.ModuleList(torch_layers)
     print(module_list)
 
-    return module_list
+    return module_list, end_layer
     # return torch_layers
 
     #if getLongSkipFrom is not None:
