@@ -145,7 +145,7 @@ class ShapeNetwork(pl.LightningModule):
         normal_l1_loss = self.masked_loss(normal * 2 - 1, normal_gt * 2 - 1, mask, torch.nn.L1Loss())
         depth_l1_loss = self.masked_loss( depth, depth_gt, mask, torch.nn.L1Loss())
         consistency_loss = 0
-        
+
         if self.enable_consistency:
             near = uncompressDepth(1)
             far = uncompressDepth(0)
@@ -249,7 +249,6 @@ if __name__ == "__main__":
     trainer.fit(model, train_dataloaders=data)
 
     test_sample = data.train_dataloader().dataset[0]
-    # print("test sample", test_sample.keys(), test_sample["mask"].shape, set(list(test_sample["mask"].flatten())))
     # remove depth and normal from the test sample dict
     depth_gt = test_sample.pop("depth").squeeze(0)
     normal_gt = np.transpose(test_sample.pop("normal"), (1, 2, 0))
@@ -258,7 +257,6 @@ if __name__ == "__main__":
     test_sample["cam2"] = torch.Tensor(test_sample["cam2"][None, ...])
     test_sample["mask"] = torch.Tensor(test_sample["mask"][None, ...])
     normal, depth = model.forward((test_sample["cam1"], test_sample["cam2"], test_sample["mask"]))
-    # print("out", out.shape)
 
     normal = normal.permute(0, 2, 3, 1).squeeze(0)
     depth = depth.squeeze(0).squeeze(0)
@@ -288,7 +286,6 @@ if __name__ == "__main__":
     # n = tf.concat([dx, dy, dz], -1)
     n = torch.cat([dx, dy, dz], dim=1)
     # n = normalize(n)
-    print("norm", torch.norm(n, dim=1, keepdim=True).shape)
     n = n / torch.norm(n, dim=1, keepdim=True)
     n = n * 0.5 + 0.5
 
@@ -306,30 +303,28 @@ if __name__ == "__main__":
         os.makedirs(result_dir)
 
     # save cam1 and cam2
-    print("cam1", test_sample["cam1"].shape, test_sample["cam2"].shape)
     cam1 = test_sample["cam1"].squeeze(0).detach().cpu().numpy()
     cam2 = test_sample["cam2"].squeeze(0).detach().cpu().numpy()
     cam1 = np.transpose(cam1, (1, 2, 0))
     cam2 = np.transpose(cam2, (1, 2, 0))
-    plt.imsave(result_dir + "cam1.png", cam1)
-    plt.imsave(result_dir + "cam2.png", cam2)
+    plt.imsave(result_dir + "cam1.png", cam1, vmin=0, vmax=1)
+    plt.imsave(result_dir + "cam2.png", cam2, vmin=0, vmax=1)
     #Image.fromarray(np.uint8(cam1 * 255)).show()
     #Image.fromarray(np.uint8(cam2 * 255)).show()
 
     # save mask
     mask_img = test_sample["mask"][0].detach().cpu().numpy()[0, ...]
-    print("mask", mask_img.shape)
-    plt.imsave(result_dir + "mask.png", mask_img, cmap="gray")
+    plt.imsave(result_dir + "mask.png", mask_img, cmap="gray", vmin=0, vmax=1)
 
     # save the depth map using matplotlib
-    plt.imsave(result_dir + "depth.png", depth, cmap="gray")
+    plt.imsave(result_dir + "depth.png", depth, cmap="gray", vmin=0, vmax=1)
 
     # save the normal map as rgb using matplotlib
-    plt.imsave(result_dir + "normal.png", normal)
+    plt.imsave(result_dir + "normal.png", normal, vmin=0, vmax=1)
 
     # save the depth_gt and normal_gt using matplotlib
-    plt.imsave(result_dir + "depth_gt.png", depth_gt, cmap="gray")
-    plt.imsave(result_dir + "normal_gt.png", normal_gt)
+    plt.imsave(result_dir + "depth_gt.png", depth_gt, cmap="gray", vmin=0, vmax=1)
+    plt.imsave(result_dir + "normal_gt.png", normal_gt, vmin=0, vmax=1)
 
     # print(dx.shape)
     # print(n.shape)
