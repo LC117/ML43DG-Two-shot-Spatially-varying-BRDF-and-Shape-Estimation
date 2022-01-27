@@ -129,7 +129,7 @@ def magnitude(x: torch.Tensor, data_format: str = "channels_last") -> torch.Tens
 
 def normalize(x: torch.Tensor, data_format: str = "channels_last") -> torch.Tensor:
     assert data_format in ["channels_last", "channels_first"]
-    return div_no_nan(x, magnitude(x, data_format), data_format)
+    return div_no_nan(x, magnitude(x, data_format))
 
 
 def dot(x: torch.Tensor, y: torch.Tensor, data_format: str = "channels_last") -> torch.Tensor:

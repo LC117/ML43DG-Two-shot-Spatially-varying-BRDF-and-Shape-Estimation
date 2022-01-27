@@ -26,6 +26,7 @@ import src.utils.sg_utils as sg
 from src.utils.rendering_layer import *
 from src.utils.common_layers import *
 
+
 class SVBRDF_Network(pl.LightningModule):
     """
     Pytorch Implementation of: 
@@ -37,16 +38,20 @@ class SVBRDF_Network(pl.LightningModule):
         base_nf : int = 32,
         fov : int = 60,
         distance_to_zero : float = 0.7,
-        camera_pos = np.asarray([0, 0, 0]),
-        light_pos = np.asarray([0, 0, 0]),
-        light_color = np.asarray([1, 1, 1]),
-        light_intensity_lumen = 45,
-        num_sgs = 24,
-        no_rendering_loss: bool = False,
-        device="cuda:0"
+        camera_pos = np.array([0, 0, 0]),
+        light_pos = np.array([0, 0, 0]),
+        light_color = np.array([1, 1, 1]),
+        light_intensity_lumen : int = 45,
+        num_sgs : int = 24,
+        no_rendering_loss : bool = False
     ):
         super().__init__()
 
+        device = "cuda:0"
+        if not torch.cuda.is_available():
+            device = "cpu"
+        self.device__ = device
+        
         self.base_nf = base_nf
         self.imgSize = imgSize
         self.fov = fov
@@ -64,7 +69,74 @@ class SVBRDF_Network(pl.LightningModule):
         self.axis_sharpness = torch.tensor(sg.setup_axis_sharpness(self.num_sgs), device=device)
 
         # Define model
-        self.model = self.network_architecture()
+        layers_needed = int(log2(self.imgSize) - 2)
+        self.enc_conv2d_steps = nn.ModuleList()
+        self.dec_tconv2d_steps = nn.ModuleList()
+        self.dec_conv2d_steps = nn.ModuleList()
+
+        out_channels = 11
+        skip_dims = []
+        for i in range(layers_needed):
+            skip_dims.append(out_channels)
+            in_channels = out_channels
+            out_channels = min(self.base_nf * (2 ** i), 512)
+            #print("enc.conv", i, ": ", in_channels, " -> ", out_channels)
+            padding_ = self._get_same_padding(256 / (2 ** i), 256 / (2 ** i), (4, 4), (2, 2))
+            
+            self.enc_conv2d_steps.append(nn.Sequential(
+                Conv2d(
+                    in_channels, 
+                    out_channels, 
+                    4,
+                    padding = padding_[0],
+                    stride = 2
+                ),
+                INReLU(out_channels)
+            ))
+
+        for i in range(layers_needed):
+            inv_i = layers_needed - i
+            in_channels = out_channels
+            out_channels = min(self.base_nf * (2 ** (inv_i - 1)), 512)
+            #print("dec.tconv", i, ": ", in_channels, " -> ", out_channels)
+            padding_ = self._get_same_padding(256 / (2 ** i), 256 / (2 ** (inv_i - 1)), (4, 4), (2, 2))
+            
+            self.dec_tconv2d_steps.append(nn.Sequential(
+                ConvTranspose2d(
+                    in_channels, 
+                    out_channels, 
+                    4,
+                    padding = padding_[0],
+                    stride = 2
+                ),
+                INReLU(out_channels)
+            ))
+
+            #print("-> dec.conv", i, ": ", out_channels + skip_dims[inv_i - 1], " -> ", out_channels)
+            self.dec_conv2d_steps.append(nn.Sequential(
+                Conv2d(
+                    out_channels + skip_dims[inv_i - 1], 
+                    out_channels, 
+                    3,
+                    padding = "same"
+                ),
+                INReLU(out_channels)
+            ))
+
+        in_channels = out_channels
+        out_channels = 7
+        self.output_conv2d_step = nn.Sequential(
+            Conv2d(
+                in_channels,
+                out_channels,
+                5,
+                padding = "same"
+            ),
+            Sigmoid()
+        )
+
+    def _masked_loss(self, loss, mask):
+        return torch.where(torch.less_equal(mask, 1e-5), torch.zeros_like(loss), loss)
 
     def _get_same_padding(self, in_height, in_width, kernel_size, strides):
         out_height = ceil(float(in_height) / float(strides[0]))
@@ -77,119 +149,49 @@ class SVBRDF_Network(pl.LightningModule):
         pad_right = pad_along_width - pad_left
         return (int(pad_top), int(pad_bottom), int(pad_left), int(pad_right))
 
-    def _masked_loss(self, loss, mask):
-        return torch.where(torch.less_equal(mask, 1e-5), torch.zeros_like(loss), loss)
-
-    def network_architecture(self):
-        layers_needed = int(log2(self.imgSize) - 2)
-        model = {}
-
-        print("======================================")
-        out_channels = 11
-        skip_dims = []
-        for i in range(layers_needed):
-            skip_dims.append(out_channels)
-            in_channels = out_channels
-            out_channels = min(self.base_nf * (2 ** i), 512)
-            print("enc.conv", i, ": ", in_channels, " -> ", out_channels)
-            padding_ = self._get_same_padding(256 / (2 ** i), 256 / (2 ** i), (4, 4), (2, 2))
-            model[f"enc.conv{i}"] = Conv2d(
-                in_channels, 
-                out_channels, 
-                4,
-                padding = padding_[0],
-                stride = 2
-            )
-            model[f"enc.conv.act{i}"] = INReLU(out_channels)
-
-        for i in range(layers_needed):
-            inv_i = layers_needed - i
-            in_channels = out_channels
-            out_channels = min(self.base_nf * (2 ** (inv_i - 1)), 512)
-            print("dec.tconv", i, ": ", in_channels, " -> ", out_channels)
-            padding_ = self._get_same_padding(256 / (2 ** i), 256 / (2 ** (inv_i - 1)), (4, 4), (2, 2))
-            model[f"dec.tconv{i}"] = ConvTranspose2d(
-                in_channels, 
-                out_channels, 
-                4,
-                padding = padding_[0],
-                stride = 2
-            )
-            model[f"dec.tconv.act{i}"] = INReLU(out_channels)
-            print("-> dec.conv", i, ": ", out_channels + skip_dims[inv_i - 1], " -> ", out_channels)
-            model[f"dec.conv{i}"] = Conv2d(
-                out_channels + skip_dims[inv_i - 1], 
-                out_channels, 
-                3,
-                padding = "same"
-            )
-            model[f"dec.conv.act{i}"] = INReLU(out_channels)
-        print("======================================")
-        in_channels = out_channels
-        out_channels = 7
-        model[f"output.conv"] = Conv2d(
-            in_channels,
-            out_channels,
-            5,
-            padding = "same"
-        )
-        model[f"output.activation"] = Sigmoid()
-
-        return model
-
     def forward(self, x):
         cam1, cam2, mask, normal, depth = x
         x = torch.cat([cam1, cam2, mask, normal, depth], dim=1)
-        
-        model = self.model
+
         n_layers = int(log2(self.imgSize) - 2)
         skips = []
 
         # Encoding
         for i in range(n_layers):
-            skips.append(x.clone())
-            x = model[f"enc.conv{i}"](x)
-            x = model[f"enc.conv.act{i}"](x)
-
-        # Deconding
+            skips.append(x)
+            x = self.enc_conv2d_steps[i](x)
+        
+        # Decoding
         for i in range(n_layers):
             inv_i = n_layers - i
-            x = model[f"dec.tconv{i}"](x)
-            x = model[f"dec.tconv.act{i}"](x)
-            x = torch.cat((x, skips[inv_i - 1]), dim=1)
-            x = model[f"dec.conv{i}"](x)
-            x = model[f"dec.conv.act{i}"](x)
+            x = self.dec_tconv2d_steps[i](x)
+            x = torch.cat((x, skips[inv_i - 1]), dim = 1)
+            x = self.dec_conv2d_steps[i](x)
         
-        x = model[f"output.conv"](x)
-        x = model[f"output.activation"](x)
-
+        # Output
+        x = self.output_conv2d_step(x)
         return x # BRDF Predictions
 
     def configure_optimizers(self):
         # half learning rate after half of the epochs: 
         # see: https://github.com/NVlabs/two-shot-brdf-shape/blob/352201b66bfa5cd5e25111451a6583a3e7d499f0/models/illumination_network.py#L238
         # and https://tensorpack.readthedocs.io/en/latest/modules/callbacks.html#tensorpack.callbacks.ScheduledHyperParamSetter
-        model = self.model
-        model_params = list()
-        n_layers = int(log2(self.imgSize) - 2)
-        for i in range(n_layers):
-            model_params = model_params + list(model[f"enc.conv{i}"].parameters())
-            model_params = model_params + list(model[f"enc.conv.act{i}"].parameters())
-        for i in range(n_layers):
-            model_params = model_params + list(model[f"dec.tconv{i}"].parameters())
-            model_params = model_params + list(model[f"dec.tconv.act{i}"].parameters())
-            model_params = model_params + list(model[f"dec.conv{i}"].parameters())
-            model_params = model_params + list(model[f"dec.conv.act{i}"].parameters())
-        model_params = model_params + list(model[f"output.conv"].parameters())
+        model_params = []
+        for step_ in self.enc_conv2d_steps:
+            model_params = model_params + list(step_.parameters())
+        for step_ in self.dec_tconv2d_steps:
+            model_params = model_params + list(step_.parameters())
+        for step_ in self.dec_conv2d_steps:
+            model_params = model_params + list(step_.parameters())
+        model_params = model_params + list(self.output_conv2d_step.parameters())
         optimizer = torch.optim.Adam(model_params, lr=0.0002, betas=(0.5, 0.999))
         step_size = self.trainer.max_epochs // 2
         scheduler = torch.optim.lr_scheduler.StepLR(
             optimizer,
             step_size=step_size if step_size > 0 else 1,
             gamma=0.5)
-        #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.trainer.max_epochs // 2, gamma=0.5)
         return [optimizer], [scheduler]
-
+        
     def general_step(self, batch, batch_idx):
         cam1, cam2, mask, normal, depth, sgs = batch["cam1"], batch["cam2"], batch["mask"], batch["normal"], batch["depth"], batch["sgs"]
         x = cam1, cam2, mask, normal, depth
@@ -209,24 +211,18 @@ class SVBRDF_Network(pl.LightningModule):
         loss_specular = loss_function(pred_specular, gt_specular)
         loss_roughness = loss_function(pred_roughness, gt_roughness)
 
-        loss = (loss_diffuse + loss_specular + loss_roughness) / 3.0
-        return loss
-
-        # Rendering Loss
-        mask = mask[:, :, :, None]
+        if self.no_rendering_loss:
+            loss = (loss_diffuse + loss_specular + loss_roughness) / 3.0
+            return loss
+        
+        # TODO With rendering loss!
+        mask = mask[:, 0:1]
         repeat = [1 for _ in range(len(mask.shape))]
-        repeat[-1] = 3
+        repeat[1] = 3
         mask3 = torch.tile(mask, repeat)
         batch_size = cam1.shape[0]
 
-        # Reshape because TF expected N x W x H x C
-        # render()-function still takes TF-format
-        diffuse_ = torch.moveaxis(pred_diffuse, 1, 3)
-        specular_ = torch.moveaxis(pred_specular, 1, 3)
-        roughness_ = torch.moveaxis(pred_roughness, 1, 3)
-        depth_ = torch.unsqueeze(depth, 3)
-
-        rendered = self.render(diffuse_, specular_, roughness_, normal, depth_, sgs, mask3)
+        rendered = self.render(pred_diffuse, pred_specular, pred_roughness, normal, depth, sgs, mask3)
 
         rerendered_log = torch.clip(torch.log(1.0 + torch.relu(rendered)), 0.0, 13.0)
         rerendered_log = torch.nan_to_num(rerendered_log)
@@ -237,12 +233,12 @@ class SVBRDF_Network(pl.LightningModule):
 
         loss = (loss_diffuse + loss_specular + loss_roughness + rerendered_loss) / 4.0
         return loss
-
+    
     def general_end(self, outputs, mode):
         # average over all batches aggregated during one epoch
         avg_loss = torch.stack([x[mode] for x in outputs]).mean()
         return avg_loss
-    
+
     def training_step(self, batch, batch_idx):
         loss = self.general_step(batch, batch_idx)
         self.log("my_loss", loss, logger=True, on_step=True, on_epoch=True)
@@ -255,94 +251,66 @@ class SVBRDF_Network(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         loss = self.general_step(batch, batch_idx)
         return {"val_loss": loss}
-    
+
     def validation_epoch_end(self, outputs):
         avg_loss = self.general_end(outputs, "val_loss")
         self.log("val_loss", avg_loss)
         return {"val_loss": avg_loss}
-
+    
     def render(self, diffuse, specular, roughness, normal, depth, sgs, mask3):
-        sdiff = torch.moveaxis(apply_mask(diffuse, mask3, "safe_diffuse", undefined=0.5), 3, 1)
-        sspec = torch.moveaxis(apply_mask(specular, mask3, "safe_specular", undefined=0.04), 3, 1)
-        srogh = torch.moveaxis(apply_mask(roughness, mask3[:, :, :, 0:1], "safe_roughness", undefined=0.4), 3, 1)
-        snormal = torch.moveaxis(torch.where(
+        sdiff = apply_mask(diffuse, mask3, "safe_diffuse", undefined=0.5)
+        sspec = apply_mask(specular, mask3, "safe_specular", undefined=0.04)
+        srogh = apply_mask(roughness, mask3[:, 0:1], "safe_roughness", undefined=0.4)
+
+        normal_scale_ = torch.moveaxis(torch.ones_like(normal), 1, 3)
+        normal_scale_ = normal_scale_ * torch.tensor([0.5, 0.5, 1.0], device=self.device__)
+        normal_scale_ = torch.moveaxis(normal_scale_, 3, 1)
+        snormal = torch.where(
             torch.less_equal(mask3, 1e-5),
-            torch.ones_like(normal) * torch.tensor([0.5, 0.5, 1.0]),
+            normal_scale_,
+            #torch.ones_like(normal) * torch.tensor([0.5, 0.5, 1.0], device=self.device__),
             normal
-        ), 3, 1)
+        )
         batch_size = diffuse.shape[0]
         axis_sharpness = torch.tile(
             torch.unsqueeze(self.axis_sharpness, 0), (batch_size, 1, 1)
         )
-        sgs_joined = torch.moveaxis(torch.cat((sgs, axis_sharpness), -1), 2, 1)
+        sgs_joined = torch.cat((sgs, axis_sharpness), -1)
         renderer = RenderingLayer(
             self.fov,
             self.distance_to_zero,
             torch.Size((-1, 3, self.imgSize, self.imgSize)),
         )
-        mask3 = torch.moveaxis(mask3, 3, 1)
-        depth = torch.moveaxis(depth, 3, 1)
-
+        sgs_joined = torch.swapaxes(sgs_joined, 1, 2)
         rerendered = renderer.call(
-                sdiff,
-                sspec,
-                srogh,
-                snormal,
-                depth,  # Depth is still in 0 - 1 range
-                mask3[:, 0:1],
-                self.camera_pos,
-                self.light_pos,
-                self.light_col,
-                sgs_joined,
-            )
+            sdiff,
+            sspec,
+            srogh,
+            snormal,
+            depth,  # Depth is still in 0 - 1 range
+            mask3[:, 0:1],
+            self.camera_pos,
+            self.light_pos,
+            self.light_col,
+            sgs_joined,
+        )
         rerendered = apply_mask(rerendered, mask3, "masked_rerender")
-        rerendered = torch.moveaxis(torch.nan_to_num(rerendered), 1, 3)
+        rerendered = torch.nan_to_num(rerendered)
         return rerendered
 
 
 if __name__ == "__main__":
+    print("================ SV-BRDF Network ================")
     # Training
-    network = SVBRDF_Network()
-    device = "cuda:0"
+    model = SVBRDF_Network(no_rendering_loss = False)
 
     trainer = pl.Trainer(
         weights_summary="full",
-        max_epochs=100,
+        max_epochs=10,
         progress_bar_refresh_rate=25,  # to prevent notebook crashes in Google Colab environments
         gpus=1 if torch.cuda.is_available() else 0, # Use GPU if available
-        profiler="simple"
+        profiler="simple",
     )
 
-    data = TwoShotBrdfDataLightning(mode="svbrdf", overfit=True, num_workers=0)
-    trainer.fit(network, train_dataloaders=data)
-
-    test_sample = data.train_dataloader().dataset[0]
-    cam1 = torch.unsqueeze(torch.tensor(test_sample["cam1"]), 0)
-    cam2 = torch.unsqueeze(torch.tensor(test_sample["cam2"]), 0)
-    mask = torch.unsqueeze(torch.tensor(test_sample["mask"]), 0)
-    normal = torch.unsqueeze(torch.tensor(test_sample["normal"]), 0)
-    depth = torch.unsqueeze(torch.tensor(test_sample["depth"]), 0)
-    x = cam1, cam2, mask, normal, depth
-
-    out = network.forward(x)
-    diffuse = torch.squeeze(torch.moveaxis(out[:, 0:3], 1, 3)).cpu().detach().numpy()
-    specular = torch.squeeze(torch.moveaxis(out[:, 3:6], 1, 3)).cpu().detach().numpy()
-    roughness = torch.squeeze(out[:, 6]).cpu().detach().numpy()
-    if not os.path.exists("Test_Results"):
-        os.makedirs("Test_Results")
-
-    gt_diffuse = test_sample["diffuse"]
-    gt_specular = test_sample["specular"]
-    gt_roughness = test_sample["roughness"]
-
-    # save the diffuse map as rgb using matplotlib
-    plt.imsave("Test_Results/diffuse.png", diffuse)
-    # save the specular map as rgb using matplotlib
-    plt.imsave("Test_Results/specular.png", specular)
-    # save the roughness map using matplotlib
-    plt.imsave("Test_Results/roughness.png", roughness, cmap="gray")
-
-    # save ground truth
-    plt.imsave("Test_Results/diffuse_gt.png", gt_diffuse)
-    plt.imsave("Test_Results/specular_gt.png", gt_specular)
-    plt.imsave("Test_Results/roughness_gt.png", gt_roughness, cmap="gray")
+    data = TwoShotBrdfDataLightning(mode="svbrdf", overfit=True, num_workers=0, batch_size=1)
+    trainer.fit(model, train_dataloaders=data)

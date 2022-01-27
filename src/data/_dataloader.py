@@ -242,19 +242,8 @@ class TwoShotBrdfData(Dataset):
         Utility method for moving all elements of the batch to a device
         :return: None, modifies batch inplace
         """
-        batch["cam1"].to(device)
-        batch["cam2"].to(device)
-        batch["mask"].to(device)
-        if "depth" in batch.keys():
-            batch["depth"].to(device)
-            batch["normal"].to(device)
-        if "sgs" in batch.keys():
-            batch["sgs"].to(device)
-        if "flash" in batch.keys():
-            batch["flash"].to(device)
-            batch["diffuse"].to(device)
-            batch["roughness"].to(device)
-            batch["specular"].to(device)
+        for key_ in batch:
+            batch[key_].to(device)
             
     @staticmethod
     def process_input_image(img: np.ndarray):
