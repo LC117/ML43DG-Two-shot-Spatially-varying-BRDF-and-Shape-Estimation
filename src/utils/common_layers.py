@@ -113,7 +113,7 @@ def safe_sqrt(x: torch.Tensor) -> torch.Tensor:
     return torch.sqrt(sqrt_in)
 
 
-def magnitude(x: torch.Tensor, data_format: str = "channels_last") -> torch.Tensor:
+def magnitude(x: torch.Tensor, data_format: str = "channels_first") -> torch.Tensor:
     assert data_format in ["channels_last", "channels_first"]
     return safe_sqrt(
         dot(x, x, data_format)
@@ -127,22 +127,22 @@ def magnitude(x: torch.Tensor, data_format: str = "channels_last") -> torch.Tens
 #     return torch.where(torch.less(to_vec3(y, data_format), 1e-7), torch.zeros_like(x), x / y)
 
 
-def normalize(x: torch.Tensor, data_format: str = "channels_last") -> torch.Tensor:
+def normalize(x: torch.Tensor, data_format: str = "channels_first") -> torch.Tensor:
     assert data_format in ["channels_last", "channels_first"]
     return div_no_nan(x, magnitude(x, data_format))
 
 
-def dot(x: torch.Tensor, y: torch.Tensor, data_format: str = "channels_last") -> torch.Tensor:
+def dot(x: torch.Tensor, y: torch.Tensor, data_format: str = "channels_first") -> torch.Tensor:
     assert data_format in ["channels_last", "channels_first"]
     return torch.sum(x * y, dim=get_channel_axis(data_format), keepdims=True)
 
 
-def to_vec3(x: torch.Tensor, data_format: str = "channels_last") -> torch.Tensor:
+def to_vec3(x: torch.Tensor, data_format: str = "channels_first") -> torch.Tensor:
     assert data_format in ["channels_last", "channels_first"]
     return repeat(x, 3, get_channel_axis(data_format))
 
 
-def get_channel_axis(data_format: str = "channels_last") -> int:
+def get_channel_axis(data_format: str = "channels_first") -> int:
     assert data_format in ["channels_last", "channels_first"]
     if data_format == "channels_first":
         channel_axis = 1

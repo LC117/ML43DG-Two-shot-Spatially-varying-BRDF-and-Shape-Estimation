@@ -218,7 +218,7 @@ class ShapeNetwork(pl.LightningModule):
 
 if __name__ == "__main__":
     # Training:
-    numGPUs = 1
+    numGPUs = torch.cuda.device_count()
     device = "cuda:0" if numGPUs else "cpu"
 
     resume_from_checkpoint = None
@@ -235,7 +235,7 @@ if __name__ == "__main__":
 
     trainer = pl.Trainer(
         #weights_summary="full",
-        max_epochs=2,
+        max_epochs=50 if numGPUs else 0,
         progress_bar_refresh_rate=25,  # to prevent notebook crashes in Google Colab environments
         gpus=numGPUs,  # Use GPU if available
         profiler="simple",

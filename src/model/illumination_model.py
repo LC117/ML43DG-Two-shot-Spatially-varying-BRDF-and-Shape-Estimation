@@ -10,6 +10,7 @@ import src.utils.rendering_layer as rl
 import src.utils.sg_utils as sg
 from src.data.dataloader_lightning import TwoShotBrdfDataLightning
 from src.utils.common_layers import INReLU
+from PIL import Image
 
 MAX_VAL = 2
 
@@ -34,7 +35,7 @@ class IlluminationNetwork(pl.LightningModule):
         if not torch.cuda.is_available():
             device = "cpu"
         self.axis_sharpness = torch.tensor(sg.setup_axis_sharpness(num_sgs), dtype=torch.float32, device=device)
-
+        self.renderer = None
         # env_net:
         # Define model:
         layers_needed = int(log2(256) - 2)  # 256 = cam1.shape[1].value
@@ -127,6 +128,7 @@ class IlluminationNetwork(pl.LightningModule):
 
         # sgs_prep:
         batch_size = out.shape[0]
+        
         axis_sharpness = torch.tile(self.axis_sharpness[None, ...], (batch_size, 1, 1))
         sgs_joined = torch.cat([out, axis_sharpness], dim=-1)
 
@@ -137,7 +139,15 @@ class IlluminationNetwork(pl.LightningModule):
         # loss:
         # sgs:
         sgs_loss = torch.nn.MSELoss()(sgs_joined, sgs_gt_joined)
-
+        
+        # vis:
+        self.set_renderer(batch_size)
+        with torch.no_grad():
+            sg_output = torch.zeros([batch_size, 3, 256, 512])
+            rendered_images = self.renderer.visualize_sgs(sgs_joined, sg_output)
+        
+        self.trainer.logger.experiment.add_image("SGS-Render", rendered_images, 0, dataformats="NCHW")
+        
         return sgs_loss
 
     def general_end(self, outputs, mode):
@@ -149,7 +159,7 @@ class IlluminationNetwork(pl.LightningModule):
         sgs_loss = self.general_step(batch, batch_idx)
         self.log("my_loss", sgs_loss, logger=True, on_step=True, on_epoch=True)
 
-        # batch_size = batch.shape[0]
+        # batch_size = batch["cam_1"].shape[0]
         # viz:
         # TODO: Not sure if this is relevant for training, or only for logging examples to tensorboard..
         # renderer = rl.RenderingLayer(60, 0.7, torch.Size([batch_size, 256, 256, 3]))
@@ -174,6 +184,10 @@ class IlluminationNetwork(pl.LightningModule):
         avg_loss = self.general_end(outputs, "val_loss")
         self.log("val_loss", avg_loss)
         return {"val_loss": avg_loss}
+    
+    def set_renderer(self, batch_size):
+        if self.renderer is None:
+            self.renderer = rl.RenderingLayer(60, 0.7, torch.Size([batch_size, 3, 256, 256]))
 
 
 if __name__ == "__main__":
