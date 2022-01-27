@@ -25,7 +25,9 @@ from torch.utils.tensorboard import SummaryWriter
 summary_writer = None # instantiate only if necessary
 # import tensorflow as tf
 # from tensorflow.python.framework import tensor_shape
-
+from torchvision.utils import save_image
+from PIL import Image        
+        
 import src.utils.common_layers as cl
 import src.utils.layer_helper as layer_helper
 from src.utils.common_layers import (
@@ -307,7 +309,7 @@ class RenderingLayer(nn.Module):
 
         s_amplitude, s_axis, s_sharpness = self._extract_sg_components(sg)
 
-        cosAngle = self._dot(d, s_axis)
+        cosAngle = self._dot(d, s_axis).transpose(2, 3) # Hopefully the results are the same..
         return s_amplitude * torch.exp(s_sharpness * (cosAngle - 1.0))
 
     def _sg_inner_product(self, sg1: torch.Tensor, sg2: torch.Tensor) -> torch.Tensor:
@@ -612,8 +614,8 @@ class RenderingLayer(nn.Module):
         """
         # Visualize:
         us, vs = torch.meshgrid(
-            torch.linspace(0.0, 1.0, output.shape[2]),
-            torch.linspace(0.0, 1.0, output.shape[1]),
+            torch.linspace(0.0, 1.0, output.shape[3]),
+            torch.linspace(0.0, 1.0, output.shape[2]), # values in shape[] increased to match channel first
         )  # OK
 
         uvs = torch.stack([us, vs], -1)
@@ -622,30 +624,23 @@ class RenderingLayer(nn.Module):
         theta = 2.0 * np.pi * uvs[..., 0] - (np.pi / 2)
         phi = np.pi * uvs[..., 1]
 
-        d = torch.expand_dims(
-            torch.stack(
-                [
-                    torch.cos(theta) * torch.sin(phi),
-                    torch.cos(phi),
-                    torch.sin(theta) * torch.sin(phi),
-                ],
-                -1,
-            ),
-            0,
-        )
+        d = torch.stack(
+                [torch.cos(theta) * torch.sin(phi),
+                 torch.cos(phi),
+                 torch.sin(theta) * torch.sin(phi)], axis = 0).unsqueeze(0)
 
-        for i in range(sgs.shape[1]):
+        for i in range(sgs.shape[1]): # scheint zu passen 
             output = output + self._sg_evaluate(
-                torch.reshape(sgs[:, i], [-1, 1, 1, 7]), d
+                torch.reshape(sgs[:, i], [-1, 7, 1, 1]), d
             )
-
-        from torchvision.utils import save_image
         
-        global summary_writer 
-        if not summary_writer: # is None
-            summary_writer = SummaryWriter()
-        summary_writer.add_images(name, output[:10, ...])
-
+        # global summary_writer 
+        
+        # if not summary_writer: # is None
+        #     summary_writer = SummaryWriter()
+        # summary_writer.add_images(name, output[:1, ...])
+        return output
+        
     def _magnitude(self, x: torch.Tensor) -> torch.Tensor:
         """
         @ DONE 
@@ -677,7 +672,7 @@ class RenderingLayer(nn.Module):
         """
         @ DONE 
         """
-        return 1 # default for pytorch!
+        return cl.get_channel_axis(data_format=self.data_format) # default for pytorch!
 
     def _uncompressDepth(
         self, d: torch.Tensor, sigma: float = 2.5, epsilon: float = 0.7
