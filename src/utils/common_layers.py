@@ -261,31 +261,6 @@ def apply_preactivation(channels, preact: str):
     return layer
 
 
-# def preresnet_basicblock(
-#     l: tf.Tensor,
-#     ch_out: int,
-#     stride: int,
-#     preact: str,
-#     isDownsampling: bool,
-#     dilation: int = 1,
-#     withDropout: bool = False,
-# ):
-#     l, shortcut = apply_preactivation("p1", l, preact)
-
-#     if isDownsampling:
-#         l = Conv2D("conv1", l, ch_out, 3, strides=stride, dilation_rate=dilation)
-#     else:
-#         l = Conv2DTranspose("tconv1", l, ch_out, 3, stride=stride)
-
-#     if withDropout:
-#         l = Dropout(l)
-#     l, _ = apply_preactivation("p2", l, preact)
-
-#     l = Conv2D("conv2", l, ch_out, 3, dilation_rate=dilation)
-
-#     return l + resnet_shortcut(shortcut, ch_out, stride, isDownsampling)
-
-
 def preresnet_basicblock(
     ch_in: int,
     ch_out: int,
@@ -312,76 +287,12 @@ def preresnet_basicblock(
 
     layers.append(torch.nn.Conv2d(ch_out, ch_out, kernel_size=3, stride=1, padding=dilation, dilation=dilation))
 
-    layers.append(resnet_shortcut(ch_in, ch_out, stride, isDownsampling))
+    layers.append(resnet_shortcut(ch_out, ch_out, stride, isDownsampling))
 
     return torch.nn.Sequential(*layers)
 
-# def preresnet_group(
-#     name: str,
-#     l: tf.Tensor,
-#     block_func: Callable[[tf.Tensor, int, int, str, bool, int, bool], tf.Tensor],
-#     features: int,
-#     count: int,
-#     stride: int,
-#     isDownsampling: bool,
-#     activation_function: str = "inrelu",
-#     dilation: int = 1,
-#     withDropout: bool = False,
-#     addLongSkip: Optional[Tuple[int, tf.Tensor]] = None,
-#     getLongSkipFrom: Optional[int] = None,
-# ) -> Union[tf.Tensor, Tuple[tf.Tensor, tf.Tensor]]:
-#     if addLongSkip and getLongSkipFrom:
-#         assert addLongSkip[0] != getLongSkipFrom
-
-#     if stride != 1:
-#         assert dilation == 1
-#     if dilation != 1:
-#         assert stride == 1
-
-#     with tf.variable_scope(name):
-#         if addLongSkip is not None:
-#             addSkipAt, skipConn = addLongSkip
-#         else:
-#             addSkipAt, skipConn = -1, None
-
-#         for i in range(0, count):
-#             with tf.variable_scope("block%d" % i):
-
-#                 # first block doesn't need activation
-#                 l = block_func(
-#                     l,
-#                     features,
-#                     stride if i == 0 else 1,
-#                     "no_preact" if i == 0 else activation_function,
-#                     isDownsampling if i == 0 else True,
-#                     dilation,
-#                     withDropout,
-#                 )
-#                 if getLongSkipFrom is not None:
-#                     if i == getLongSkipFrom:
-#                         skipConnection = l
-
-#                 if i == addSkipAt:
-#                     with tf.variable_scope("long_shortcut"):
-#                         changed_shortcut = resnet_shortcut(
-#                             skipConn, l.shape[-1], 1, True
-#                         )
-#                         l = l + changed_shortcut
-
-#         # end of each group need an extra activation
-#         if activation_function == "bnrelu":
-#             l = BNReLU("bnlast", l)
-#         if activation_function == "inrelu":
-#             l = INReLU(l)
-
-#     if getLongSkipFrom is not None:
-#         return l, skipConnection
-#     else:
-#         return l
-
 
 def preresnet_group(
-    name: str,
     ch_in: int,
     block_func: Callable[[int, int, int, str, bool, int, bool], torch.nn.Module],
     features: int,
@@ -393,7 +304,7 @@ def preresnet_group(
     withDropout: bool = False,
     addLongSkip = None, # : Optional[Tuple[int, tf.Tensor]] = None, TODO: add TypeHint
     getLongSkipFrom: Optional[int] = None,
-) -> Tuple[torch.nn.Module]:
+) -> torch.nn.ModuleList:
 # ) -> Union[tf.Tensor, Tuple[tf.Tensor, tf.Tensor]]:
     if addLongSkip and getLongSkipFrom:
         assert addLongSkip[0] != getLongSkipFrom
@@ -403,8 +314,10 @@ def preresnet_group(
     if dilation != 1:
         assert stride == 1
 
-    layers = []
-    torch_layers = []
+    layers = nn.ModuleDict()
+
+    #layers = []
+    #torch_layers = []
 
     if addLongSkip is not None:
         addSkipAt, skipConn = addLongSkip
@@ -413,6 +326,7 @@ def preresnet_group(
 
     for i in range(0, count):
         # first block doesn't need activation
+        print("chin", ch_in)
         layer = block_func(
             ch_in,
             features,
@@ -424,10 +338,13 @@ def preresnet_group(
         )
         layers.append(layer)
 
+        ch_in = features
+
         if getLongSkipFrom is not None:
             if i == getLongSkipFrom:
                 skipConnection = layer
-                torch_layers.append((torch.nn.Sequential(*layers), "save"))
+                # torch_layers.append((torch.nn.Sequential(*layers), "save"))
+                torch_layers.append(torch.nn.Sequential(*layers))
                 layers.clear()
 
         if i == addSkipAt:
@@ -439,18 +356,23 @@ def preresnet_group(
             layers.append(changed_shortcut)
 
             #l = l + changed_shortcut
-            torch_layers.append((torch.nn.Sequential(*layers), "add"))
+            torch_layers.append(torch.nn.Sequential(*layers))
+            # torch_layers.append((torch.nn.Sequential(*layers), "add"))
             layers.clear()
 
     # end of each group need an extra activation
     if activation_function == "bnrelu":
-        layers.append(features)
+        layers.append(BNReLU(features))
     if activation_function == "inrelu":
-        layers.append(features)
+        layers.append(INReLU(features))
 
-    torch_layers.append((torch.nn.Sequential(*layers), "end"))
+    # torch_layers.append((torch.nn.Sequential(*layers), "end"))
+    torch_layers.append(torch.nn.Sequential(*layers))
+    module_list = nn.ModuleList(torch_layers)
+    print(module_list)
 
-    return torch_layers
+    return module_list
+    # return torch_layers
 
     #if getLongSkipFrom is not None:
     #    return l, skipConnection

@@ -317,11 +317,11 @@ if __name__ == "__main__":
     trainer.fit(network, train_dataloaders=data)
 
     test_sample = data.train_dataloader().dataset[0]
-    cam1 = torch.unsqueeze(torch.tensor(test_sample["cam1"]), 0, device=device)
-    cam2 = torch.unsqueeze(torch.tensor(test_sample["cam2"]), 0, device=device)
-    mask = torch.unsqueeze(torch.tensor(test_sample["mask"]), 0, device=device)
-    normal = torch.unsqueeze(torch.tensor(test_sample["normal"]), 0, device=device)
-    depth = torch.unsqueeze(torch.tensor(test_sample["depth"]), 0, device=device)
+    cam1 = torch.unsqueeze(torch.tensor(test_sample["cam1"]), 0)
+    cam2 = torch.unsqueeze(torch.tensor(test_sample["cam2"]), 0)
+    mask = torch.unsqueeze(torch.tensor(test_sample["mask"]), 0)
+    normal = torch.unsqueeze(torch.tensor(test_sample["normal"]), 0)
+    depth = torch.unsqueeze(torch.tensor(test_sample["depth"]), 0)
     x = cam1, cam2, mask, normal, depth
 
     out = network.forward(x)

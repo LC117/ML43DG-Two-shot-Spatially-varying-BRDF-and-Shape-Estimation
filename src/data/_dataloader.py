@@ -174,12 +174,12 @@ class TwoShotBrdfData(Dataset):
         """
         if par_name == ParameterNames.INPUT_1:
             if self.training:
-                # cam1_flash = np.transpose(pyexr.open(str(path_to_folder / ParameterNames.INPUT_1_FLASH)).get(), (2, 0, 1))
-                # cam1_env = np.transpose(pyexr.open(str(path_to_folder / ParameterNames.INPUT_1_ENV)).get(), (2, 0, 1))
-                cam1_flash = read_image(str(path_to_folder / ParameterNames.INPUT_1_FLASH.value), False)
-                cam1_env = read_image(str(path_to_folder / ParameterNames.INPUT_1_ENV.value), False)
-                cam1 = TwoShotBrdfData.merge_seperate_input_images(cam1_flash, input_env=cam1_env)
-                cam1 = TwoShotBrdfData.process_input_image(cam1)
+                cam1_flash = np.transpose(pyexr.open(str(path_to_folder / ParameterNames.INPUT_1_FLASH.value)).get(), (0, 1, 2))#, (2, 0, 1))
+                cam1_env = np.transpose(pyexr.open(str(path_to_folder / ParameterNames.INPUT_1_ENV.value)).get(), (0, 1, 2))#, (2, 0, 1))
+                #cam1_flash = read_image(str(path_to_folder / ParameterNames.INPUT_1_FLASH.value), False)
+                #cam1_env = read_image(str(path_to_folder / ParameterNames.INPUT_1_ENV.value), False)
+                cam1 = cam1_flash#TwoShotBrdfData.merge_seperate_input_images(cam1_flash, input_env=cam1_env)
+                cam1 = cam1#TwoShotBrdfData.process_input_image(cam1)
                 
             else:
                 # cam1 = np.transpose(pyexr.open(str(path_to_folder / ParameterNames.INPUT_1_LDR)).get(), (2, 0, 1))
