@@ -251,12 +251,13 @@ if __name__ == "__main__":
     device = "cuda:0" if numGPUs else "cpu"
 
     train = False
-    infer_mode = "overfit"
+    infer_mode = "train"
     resume_from_checkpoint = None
     resume_training = True
-    batch_size = 5
+    batch_size = 8
     num_workers = 0
-    overfit = True
+    overfit = False
+
     if overfit:
         infer_mode = "overfit"
         batch_size = 5
@@ -276,7 +277,7 @@ if __name__ == "__main__":
         model = ShapeNetwork(consistency_loss=0.5, device=device)  # downscale_steps=2, base_nf=4)
 
     data = TwoShotBrdfDataLightning(mode="shape", overfit=overfit, num_workers=num_workers, batch_size=batch_size,
-                                    persistent_workers=num_workers > 0, pin_memory=numGPUs > 0)
+                                    persistent_workers=num_workers > 0, pin_memory=numGPUs > 0, shuffle=train)
     dataloaders = {
         "train": data.train_dataloader,
         "val": data.val_dataloader,

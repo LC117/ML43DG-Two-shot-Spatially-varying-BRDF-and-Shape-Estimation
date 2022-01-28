@@ -13,14 +13,14 @@ class TwoShotBrdfDataLightning(pl.LightningDataModule):
         
     """
     def __init__(self, mode: str, batch_size: int = 64, num_workers=0, overfit: bool = False,
-                 persistent_workers: bool = False, pin_memory: bool = False):
+                 persistent_workers: bool = False, pin_memory: bool = False, shuffle: bool = True):
         super().__init__()
         self.mode = mode
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.persistent_workers = persistent_workers
         self.pin_memory = pin_memory
-        self.shuffle = not overfit
+        self.shuffle = (not overfit) and shuffle
         
         self.train =    "train" if not overfit else "overfit"
         self.val =      "val"   if not overfit else "overfit"
