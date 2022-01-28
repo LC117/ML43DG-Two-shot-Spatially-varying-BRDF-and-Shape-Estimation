@@ -16,6 +16,8 @@ from src.utils.losses import masked_loss
 
 from pathlib import Path
 
+from src.utils.visualize_tools import save_img
+
 MAX_VAL = 2
 
 """
@@ -213,11 +215,11 @@ if __name__ == "__main__":
     device = "cuda:0" if numGPUs else "cpu"
 
     resume_from_checkpoint = None
-    resume_training = False
+    resume_training = True
     if resume_training:
-        path_start = Path("lightning_logs")
-        ckpt_path = Path("epoch=14-step=14.ckpt")
-        ckpt_path = path_start / "version_258" / "checkpoints" / ckpt_path
+        path_start = Path("../../lightning_logs")
+        ckpt_path = Path("epoch=3-step=6187.ckpt")
+        ckpt_path = path_start / "version_139" / "checkpoints" / ckpt_path
         resume_from_checkpoint = str(ckpt_path)
         model = ShapeNetwork.load_from_checkpoint(
             checkpoint_path=str(ckpt_path))
@@ -226,7 +228,7 @@ if __name__ == "__main__":
 
     trainer = pl.Trainer(
         #weights_summary="full",
-        max_epochs=50 if numGPUs else 0,
+        max_epochs=1 if numGPUs else 0,
         progress_bar_refresh_rate=25,  # to prevent notebook crashes in Google Colab environments
         gpus=numGPUs,  # Use GPU if available
         profiler="simple",
@@ -234,58 +236,35 @@ if __name__ == "__main__":
         #precision=16,
     )
 
-    data = TwoShotBrdfDataLightning(mode="shape", overfit=True, num_workers=0, batch_size=8, persistent_workers=False, pin_memory=True)
+    data = TwoShotBrdfDataLightning(mode="shape", overfit=False, num_workers=4, batch_size=4, persistent_workers=True, pin_memory=True)
 
-    trainer.fit(model, train_dataloaders=data)
+    # trainer.fit(model, train_dataloaders=data)
 
-    test_sample = data.train_dataloader().dataset[0]
+    test_sample = data.val_dataloader().dataset[0]
     # remove depth and normal from the test sample dict
-    depth_gt = test_sample.pop("depth").squeeze(0)
-    normal_gt = np.transpose(test_sample.pop("normal"), (1, 2, 0))
+    depth_gt = test_sample["depth"].squeeze(0)
+    normal_gt = (test_sample["normal"], (1, 2, 0))
+    #depth_gt = test_sample.pop("depth").squeeze(0)
+    #normal_gt = np.transpose(test_sample.pop("normal"), (1, 2, 0))
     # make the cam1, cam2 and mask 4 dimensional
     test_sample["cam1"] = torch.Tensor(test_sample["cam1"][None, ...])
     test_sample["cam2"] = torch.Tensor(test_sample["cam2"][None, ...])
     test_sample["mask"] = torch.Tensor(test_sample["mask"][None, ...])
     normal, depth = model.forward((test_sample["cam1"], test_sample["cam2"], test_sample["mask"]))
 
+    result_dir = str(Path("Test_Results") / Path("shape_model") / Path("validation")) + "/"
+
+    save_img(normal, result_dir, "normal")
+    save_img(depth, result_dir, "depth")
+
+    for k in test_sample.keys():
+        save_img(test_sample[k], result_dir, k + "_gt")
+
+    """
     normal = normal.permute(0, 2, 3, 1).squeeze(0)
     depth = depth.squeeze(0).squeeze(0)
     normal = normal.detach().cpu().numpy()
     depth = depth.detach().cpu().numpy()
-
-    """
-    depth_tensor = torch.Tensor(depth_gt)
-    near = uncompressDepth(1)
-    far = uncompressDepth(0)
-    d = uncompressDepth(depth_tensor)
-    depth_tensor = div_no_nan(d - near, far - near)
-
-    sobel_x = torch.tensor([[1, 0, -1], [2, 0, -2], [1, 0, -1]], dtype=torch.float32).detach()
-    sobel_x = sobel_x.view((1, 1, 3, 3))
-    sobel_y = torch.tensor([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], dtype=torch.float32).detach()
-    sobel_y = -1. * sobel_y.view((1, 1, 3, 3))
-
-    dx = torch.nn.functional.conv2d(depth_tensor.view((1, 1, 256, 256)), sobel_x, padding=1, stride=1)
-    dy = torch.nn.functional.conv2d(depth_tensor.view((1, 1, 256, 256)), sobel_y, padding=1, stride=1)
-
-    texel_size = 1.0 / 256
-    # create a tensor of ones of shape and type of out[..., 0]
-    ones = torch.ones_like(dx)
-    dz = ones * texel_size * 2.0
-
-    # n = tf.concat([dx, dy, dz], -1)
-    n = torch.cat([dx, dy, dz], dim=1)
-    # n = normalize(n)
-    n = n / torch.norm(n, dim=1, keepdim=True)
-    n = n * 0.5 + 0.5
-
-    n = n.squeeze(0)
-    n = n.permute(1, 2, 0)
-    dx = dx.squeeze(0).squeeze(0)
-    dy = dy.squeeze(0).squeeze(0)
-    """
-
-    result_dir = str(Path("Test_Results") / Path("shape_model")) + "/"
 
     # create a new folder Test_Results
     # and save the depth and normal maps
@@ -299,8 +278,6 @@ if __name__ == "__main__":
     cam2 = np.transpose(cam2, (1, 2, 0))
     plt.imsave(result_dir + "cam1.png", cam1, vmin=0, vmax=1)
     plt.imsave(result_dir + "cam2.png", cam2, vmin=0, vmax=1)
-    #Image.fromarray(np.uint8(cam1 * 255)).show()
-    #Image.fromarray(np.uint8(cam2 * 255)).show()
 
     # save mask
     mask_img = test_sample["mask"][0].detach().cpu().numpy()[0, ...]
@@ -315,23 +292,9 @@ if __name__ == "__main__":
     # save the depth_gt and normal_gt using matplotlib
     plt.imsave(result_dir + "depth_gt.png", depth_gt, cmap="gray", vmin=0, vmax=1)
     plt.imsave(result_dir + "normal_gt.png", normal_gt, vmin=0, vmax=1)
-
-    # print(dx.shape)
-    # print(n.shape)
-    # print(depth_tensor.shape)
-    # print(depth_gt.shape)
-
-    # save the n as rgb using matplotlib
-    # plt.imsave("Test_Results/n.png", n.detach().cpu().numpy())
-
-    # save dx and dy using matplotlib
-    # plt.imsave("Test_Results/dx.png", dx.detach().cpu().numpy(), cmap="gray")
-    # plt.imsave("Test_Results/dy.png", dy.detach().cpu().numpy(), cmap="gray")
-
-    # save depth_tensor using matplotlib
-    # plt.imsave("Test_Results/depth_tensor.png", depth_tensor.detach().cpu().numpy(), cmap="gray")
+    """
 
     print("DONE")
 
     # Testing:
-    # trainer.test(model, test_dataloaders=data)
+    # trainer.test(model, dataloaders=data)
