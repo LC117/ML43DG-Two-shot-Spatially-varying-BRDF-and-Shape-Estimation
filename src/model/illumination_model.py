@@ -196,10 +196,10 @@ if __name__ == "__main__":
     # Training:
 
     model = IlluminationNetwork()
-
+    epochs = 10
     trainer = pl.Trainer(
         weights_summary="full",
-        max_epochs=1,
+        max_epochs=epochs,
         progress_bar_refresh_rate=25,  # to prevent notebook crashes in Google Colab environments
         gpus=1 if torch.cuda.is_available() else 0, # Use GPU if available
         profiler="simple",
@@ -230,18 +230,54 @@ if __name__ == "__main__":
     if not os.path.exists(result_dir):
         os.makedirs(result_dir)
         
-    # Testing:
-    # trainer.test(ckpt_path="best")
-    sgs_joined = torch.cat([predictions[0], model.axis_sharpness], dim=-1)
-    renderer = rl.RenderingLayer(60, 0.7, torch.Size([1, 3, 256, 256]))
-    sg_output = torch.zeros([1, 3, 256, 512])
-    rendered_images = renderer.visualize_sgs(sgs_joined[None, ...], sg_output)
-    
-    plt.imsave(result_dir + "sgs.png", np.uint8(np.transpose(rendered_images.detach().numpy()[0], (1,2,0)) * 255 ))
-    
-    sgs_joined = torch.cat([targets[0], model.axis_sharpness], dim=-1)
-    renderer = rl.RenderingLayer(60, 0.7, torch.Size([1, 3, 256, 256]))
-    sg_output = torch.zeros([1, 3, 256, 512])
-    rendered_images = renderer.visualize_sgs(sgs_joined[None, ...], sg_output)
-    
-    plt.imsave(result_dir + "sgs_gt.png", np.uint8(np.transpose(rendered_images.detach().numpy()[0], (1,2,0)) * 255 ))
+    for i in range(3):
+        # Testing:
+        # trainer.test(ckpt_path="best")
+        sgs_joined = torch.cat([predictions[i], model.axis_sharpness], dim=-1)
+        renderer = rl.RenderingLayer(60, 0.7, torch.Size([1, 3, 256, 256]))
+        sg_output = torch.zeros([1, 3, 256, 512])
+        rendered_images = renderer.visualize_sgs(sgs_joined[None, ...], sg_output)
+        
+        rendered_images_norm = np.transpose(rendered_images.detach().numpy()[0], (1,2,0))
+        rendered_images_norm /= np.max(rendered_images_norm)
+        # rendered_images_norm = np.uint8(rendered_images_norm * 255 )
+        
+        # plt.imsave(result_dir + "sgs.png", np.uint8(rendered_images_norm * 255 ))
+        plt.imsave(result_dir + f"sgs_{i}_epochs_{epochs}.png", rendered_images_norm, vmin=0., vmax=1.)
+        
+        sgs_joined = torch.cat([targets[i], model.axis_sharpness], dim=-1)
+        renderer = rl.RenderingLayer(60, 0.7, torch.Size([1, 3, 256, 256]))
+        sg_output = torch.zeros([1, 3, 256, 512])
+        rendered_images = renderer.visualize_sgs(sgs_joined[None, ...], sg_output)
+        
+        rendered_images_norm = np.transpose(rendered_images.detach().numpy()[0], (1,2,0))
+        rendered_images_norm /= np.max(rendered_images_norm)
+        
+        # plt.imsave(result_dir + "sgs_gt.png", np.uint8(rendered_images_norm * 255 ))
+        plt.imsave(result_dir + f"sgs_gt_{i}.png", rendered_images_norm, vmin=0., vmax=1. )
+        
+    for i in range(5):
+        
+        # 3D Plot:
+        # plot the predictions and ground truth in 3d:
+        # create a new plot
+        fig = plt.figure()
+        # set the title to "targets"
+        fig.suptitle("targets r vs predictions b")
+        # create a 3d plot of the targets
+        ax = fig.add_subplot(111, projection='3d')
+        # plot the targets
+        ax.scatter(targets[i, :, 1], targets[i, :,  1], targets[i, :, 2], c='r', marker='o')
+        # present the plot
+        #plt.show()
+
+        predictions_detached = predictions.detach().numpy()
+        
+        # set the title to "predictions"
+        #fig.suptitle("predictions")
+        # create a 3d plot of the predictions
+        #ax = fig.add_subplot(111, projection='3d')
+        # plot the predictions
+        ax.scatter(predictions_detached[i, :, 0], predictions_detached[i, :, 1], predictions_detached[i, :, 2], c='b', marker='o')
+        # present the plot
+        plt.savefig(result_dir + f"3s_sgs_gt_comparison_{i}_epochs_{epochs}.png", bbox_inches='tight' )
