@@ -49,7 +49,8 @@ class RenderingLayer(nn.Module):
         distanceToZero: float,
         output_shape: torch.Size,
         #data_format: str = "channels_first" # want to remove this -> "channel_fist" is default in pytoch
-        data_format = "channels_first"
+        data_format = "channels_first",
+        device = "cuda:0"
     ):
         """
         @ DONE 
@@ -59,9 +60,9 @@ class RenderingLayer(nn.Module):
         # self.data_format = layer_helper.normalize_data_format(data_format)
         self.data_format = data_format  
 
-        device = "cuda:0"
-        if not torch.cuda.is_available():
-            device = "cpu"
+        #device = "cuda:0"
+        #if not torch.cuda.is_available():
+        #    device = "cpu"
         self.device__ = device
 
         self.build(output_shape)

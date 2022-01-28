@@ -43,13 +43,11 @@ class SVBRDF_Network(pl.LightningModule):
         light_color = np.array([1, 1, 1]),
         light_intensity_lumen : int = 45,
         num_sgs : int = 24,
-        no_rendering_loss : bool = False
+        no_rendering_loss : bool = False,
+        device = "cuda:0"
     ):
         super().__init__()
 
-        device = "cuda:0"
-        if not torch.cuda.is_available():
-            device = "cpu"
         self.device__ = device
         
         self.base_nf = base_nf
@@ -149,6 +147,34 @@ class SVBRDF_Network(pl.LightningModule):
         pad_right = pad_along_width - pad_left
         return (int(pad_top), int(pad_bottom), int(pad_left), int(pad_right))
 
+    def _plot_grad_flow(self, named_parameters):
+        '''Plots the gradients flowing through different layers in the net during training.
+        Can be used for checking for possible gradient vanishing / exploding problems.
+
+        Usage: Plug this function in Trainer class after loss.backwards() as 
+        "plot_grad_flow(self.model.named_parameters())" to visualize the gradient flow'''
+        ave_grads = []
+        max_grads= []
+        layers = []
+        for n, p in named_parameters:
+            if(p.requires_grad) and ("bias" not in n):
+                layers.append(n)
+                ave_grads.append(p.grad.abs().mean())
+                max_grads.append(p.grad.abs().max())
+        plt.bar(np.arange(len(max_grads)), max_grads, alpha=0.1, lw=1, color="c")
+        plt.bar(np.arange(len(max_grads)), ave_grads, alpha=0.1, lw=1, color="b")
+        plt.hlines(0, 0, len(ave_grads)+1, lw=2, color="k" )
+        plt.xticks(range(0,len(ave_grads), 1), layers, rotation="vertical")
+        plt.xlim(left=0, right=len(ave_grads))
+        plt.ylim(bottom = -0.001, top=0.02) # zoom in on the lower gradient regions
+        plt.xlabel("Layers")
+        plt.ylabel("average gradient")
+        plt.title("Gradient flow")
+        plt.grid(True)
+        plt.legend([Line2D([0], [0], color="c", lw=4),
+                    Line2D([0], [0], color="b", lw=4),
+                    Line2D([0], [0], color="k", lw=4)], ['max-gradient', 'mean-gradient', 'zero-gradient'])
+
     def forward(self, x):
         cam1, cam2, mask, normal, depth = x
         x = torch.cat([cam1, cam2, mask, normal, depth], dim=1)
@@ -246,6 +272,7 @@ class SVBRDF_Network(pl.LightningModule):
     
     def training_epoch_end(self, outputs):
         avg_loss = self.general_end(outputs, "loss")
+        #self._plot_grad_flow(self.named_parameters())
         self.log("train_loss", avg_loss)
 
     def validation_step(self, batch, batch_idx):
@@ -280,6 +307,7 @@ class SVBRDF_Network(pl.LightningModule):
             self.fov,
             self.distance_to_zero,
             torch.Size((-1, 3, self.imgSize, self.imgSize)),
+            device = self.device__
         )
         sgs_joined = torch.swapaxes(sgs_joined, 1, 2)
         rerendered = renderer.call(
@@ -302,7 +330,7 @@ class SVBRDF_Network(pl.LightningModule):
 if __name__ == "__main__":
     print("================ SV-BRDF Network ================")
     # Training
-    model = SVBRDF_Network(no_rendering_loss = False)
+    model = SVBRDF_Network(no_rendering_loss = False, device = "cuda:0" if torch.cuda.is_available else "cpu")
 
     trainer = pl.Trainer(
         weights_summary="full",
@@ -312,5 +340,5 @@ if __name__ == "__main__":
         profiler="simple",
     )
 
-    data = TwoShotBrdfDataLightning(mode="svbrdf", overfit=True, num_workers=0, batch_size=1)
+    data = TwoShotBrdfDataLightning(mode="svbrdf", overfit=True, num_workers=0, batch_size=3)
     trainer.fit(model, train_dataloaders=data)
