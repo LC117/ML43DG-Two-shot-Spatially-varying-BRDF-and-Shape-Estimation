@@ -6,6 +6,7 @@ sys.path.append(str(path_root))
 from math import log2
 from math import ceil
 import numpy as np
+from PIL import Image
 
 import pytorch_lightning as pl
 import torch 
@@ -261,24 +262,29 @@ class SVBRDF_Network(pl.LightningModule):
             return loss
         
         # TODO With rendering loss!
-        # mask = mask[:, 0:1]
-        repeat = [1 for _ in range(len(mask.shape))]
-        repeat[1] = 3
-        mask3 = torch.tile(mask, repeat)
-        
-        # batch_size = cam1.shape[0]
+        with torch.no_grad(): # Otherwise the losses become nan!
+            # mask = mask[:, 0:1]
+            repeat = [1 for _ in range(len(mask.shape))]
+            repeat[1] = 3
+            mask3 = torch.tile(mask, repeat)
+            
+            # batch_size = cam1.shape[0]
 
-        rendered = self.render(pred_diffuse, pred_specular, pred_roughness, normal, depth, sgs, mask3)
+            rendered = self.render(pred_diffuse, pred_specular, pred_roughness, normal, depth, sgs, mask3)
 
-        rerendered_log_pred = torch.clip(torch.log(1.0 + torch.relu(rendered)), 0.0, 13.0)
-        # rerendered_log = torch.nan_to_num(rerendered_log)
-        loss_log_target = torch.clip(torch.log(1.0 + torch.relu(cam1)), 0.0, 13.0)
-        # loss_log = torch.nan_to_num(loss_log)
-        
-        # l1_err = loss_function(loss_log, rerendered_log)
-        rerendered_loss = masked_loss(rerendered_log_pred, loss_log_target, mask, loss_function)
+            # Image.fromarray(np.uint8(np.transpose(rendered.detach().numpy()[0] * 255, (1, 2, 0)))).show()
+            # Image.fromarray(np.uint8(np.transpose(cam1.detach().numpy()[0] * 255, (1, 2, 0)))).show()
+            
+            rerendered_log_pred = torch.clip(torch.log(1.0 + torch.relu(rendered)), 0.0, 13.0)
+            # rerendered_log = torch.nan_to_num(rerendered_log)
+            loss_log_target = torch.clip(torch.log(1.0 + torch.relu(cam1)), 0.0, 13.0)
+            # loss_log = torch.nan_to_num(loss_log)
+            
+            # l1_err = loss_function(loss_log, rerendered_log)
+            rerendered_loss = masked_loss(rerendered_log_pred, loss_log_target, mask, loss_function)
 
         loss = (loss_diffuse + loss_specular + loss_roughness + rerendered_loss) / 4.0
+        assert loss != torch.nan
         return loss
     
     def general_end(self, outputs, mode):
@@ -358,7 +364,7 @@ if __name__ == "__main__":
     print("================ SV-BRDF Network ================")
     # Training
     model = SVBRDF_Network(no_rendering_loss = False, device = "cuda:0" if torch.cuda.is_available() else "cpu")
-
+    # torch.autograd.set_detect_anomaly(True) 
     trainer = pl.Trainer(
         weights_summary="full",
         max_epochs=10,
