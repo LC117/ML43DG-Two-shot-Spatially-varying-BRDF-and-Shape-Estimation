@@ -10,14 +10,14 @@
 # -----------------------------------------------------------------------
 
 import numpy as np
-import tensorflow as tf
-from tensorpack.tfutils.summary import add_moving_summary
+#import tensorflow as tf
+#from tensorpack.tfutils.summary import add_moving_summary
 
 # import utils.tb_utils as tbutil
 from src.utils.common_layers import uncompressDepth
 from src.utils.common_layers import binaerize_mask
 
-def l1_loss(gt: tf.Tensor, pred: tf.Tensor):
+"""def l1_loss(gt: tf.Tensor, pred: tf.Tensor):
     return tf.abs(gt - pred)
 
 
@@ -38,7 +38,7 @@ def cosine_distance(l, p):
 def angular_distance(l, p, negative_vals=False):
     cosAng = tf.clip_by_value(cosine_distance(l, p), -1.0 + EPS, 1.0 - EPS)
     mult = 2.0 if negative_vals else 1.0
-    return (mult * tf.acos(cosAng)) / np.pi
+    return (mult * tf.acos(cosAng)) / np.pi"""
 
 
 # def masked_loss(loss: tf.Tensor, mask: tf.Tensor):
@@ -55,7 +55,7 @@ def masked_loss(pred, target, mask, loss):
     
     return loss# / n_nonzero
 
-def height_normal_consistency_loss(
+"""def height_normal_consistency_loss(
     depth, normal, mask3, consistency_loss_factor: float, imgSize: int, max_outputs: int
 ):
     near = uncompressDepth(1)
@@ -84,4 +84,4 @@ def height_normal_consistency_loss(
     repeat[-1] = 3
     tbutil.four_side_by_side(
         tf.tile(depth, repeat), cn, normal, cl, "consistency", max_outputs
-    )
+    )"""

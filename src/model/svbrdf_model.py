@@ -150,34 +150,6 @@ class SVBRDF_Network(pl.LightningModule):
         pad_right = pad_along_width - pad_left
         return (int(pad_top), int(pad_bottom), int(pad_left), int(pad_right))
 
-    def _plot_grad_flow(self, named_parameters):
-        '''Plots the gradients flowing through different layers in the net during training.
-        Can be used for checking for possible gradient vanishing / exploding problems.
-
-        Usage: Plug this function in Trainer class after loss.backwards() as 
-        "plot_grad_flow(self.model.named_parameters())" to visualize the gradient flow'''
-        ave_grads = []
-        max_grads= []
-        layers = []
-        for n, p in named_parameters:
-            if(p.requires_grad) and ("bias" not in n):
-                layers.append(n)
-                ave_grads.append(p.grad.abs().mean())
-                max_grads.append(p.grad.abs().max())
-        plt.bar(np.arange(len(max_grads)), max_grads, alpha=0.1, lw=1, color="c")
-        plt.bar(np.arange(len(max_grads)), ave_grads, alpha=0.1, lw=1, color="b")
-        plt.hlines(0, 0, len(ave_grads)+1, lw=2, color="k" )
-        plt.xticks(range(0,len(ave_grads), 1), layers, rotation="vertical")
-        plt.xlim(left=0, right=len(ave_grads))
-        plt.ylim(bottom = -0.001, top=0.02) # zoom in on the lower gradient regions
-        plt.xlabel("Layers")
-        plt.ylabel("average gradient")
-        plt.title("Gradient flow")
-        plt.grid(True)
-        plt.legend([Line2D([0], [0], color="c", lw=4),
-                    Line2D([0], [0], color="b", lw=4),
-                    Line2D([0], [0], color="k", lw=4)], ['max-gradient', 'mean-gradient', 'zero-gradient'])
-
     def forward(self, x):
         cam1, cam2, mask, normal, depth = x
         x = torch.cat([cam1, cam2, normal, depth, mask], dim=1)
@@ -299,7 +271,6 @@ class SVBRDF_Network(pl.LightningModule):
     
     def training_epoch_end(self, outputs):
         avg_loss = self.general_end(outputs, "loss")
-        #self._plot_grad_flow(self.named_parameters())
         self.log("train_loss", avg_loss)
 
     def validation_step(self, batch, batch_idx):
@@ -375,3 +346,37 @@ if __name__ == "__main__":
 
     data = TwoShotBrdfDataLightning(mode="svbrdf", overfit=True, num_workers=0, batch_size=3)
     trainer.fit(model, train_dataloaders=data)
+
+    test_sample = data.train_dataloader().dataset[0]
+    cam1 = torch.unsqueeze(torch.tensor(test_sample["cam1"]), dim=0)
+    cam2 = torch.unsqueeze(torch.tensor(test_sample["cam2"]), dim=0)
+    mask = torch.unsqueeze(torch.tensor(test_sample["mask"]), dim=0)
+    normal = torch.unsqueeze(torch.tensor(test_sample["normal"]), dim=0)
+    depth = torch.unsqueeze(torch.tensor(test_sample["depth"]), dim=0)
+
+    x = cam1, cam2, mask, normal, depth
+    diffuse, specular, roughness = model.forward(x)
+
+    diffuse = torch.squeeze(torch.moveaxis(diffuse, 1, 3)).detach().numpy()
+    specular = torch.squeeze(torch.moveaxis(specular, 1, 3)).detach().numpy()
+    roughness = np.repeat(torch.squeeze(torch.moveaxis(roughness, 1, 3)).detach().numpy()[..., np.newaxis], 3, 2)
+    if not os.path.exists("TEST_RESULTS/brdf/"):
+        os.makedirs("TEST_RESULTS/brdf/")
+    
+    gt_diffuse = np.moveaxis(test_sample["diffuse"], 0, 2)
+    gt_specular = np.moveaxis(test_sample["specular"], 0, 2)
+    gt_roughness = np.repeat(np.moveaxis(test_sample["roughness"], 0, 2), 3, 2)
+
+    # save the diffuse map as rgb using matplotlib
+    plt.imsave("TEST_RESULTS/brdf/diffuse.png", diffuse)
+    # save the specular map as rgb using matplotlib
+    plt.imsave("TEST_RESULTS/brdf/specular.png", specular)
+    # save the roughness map using matplotlib
+    plt.imsave("TEST_RESULTS/brdf/roughness.png", roughness, cmap="gray")
+
+    # save ground truth
+    plt.imsave("TEST_RESULTS/brdf/diffuse_gt.png", gt_diffuse)
+    plt.imsave("TEST_RESULTS/brdf/specular_gt.png", gt_specular)
+    plt.imsave("TEST_RESULTS/brdf/roughness_gt.png", gt_roughness, cmap="gray")
+
+
