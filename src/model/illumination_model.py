@@ -26,7 +26,7 @@ class IlluminationNetwork(pl.LightningModule):
     https://github.com/NVlabs/two-shot-brdf-shape/blob/352201b66bfa5cd5e25111451a6583a3e7d499f0/models/illumination_network.py
     """
 
-    def __init__(self, imgSize: int = 256, base_nf: int = 16, num_sgs: int = 24):
+    def __init__(self, imgSize: int = 256, base_nf: int = 16, num_sgs: int = 24, log_images=False):
         super().__init__()
         self.imgSize = imgSize
         self.base_nf = base_nf
@@ -36,6 +36,7 @@ class IlluminationNetwork(pl.LightningModule):
             device = "cpu"
         self.axis_sharpness = torch.tensor(sg.setup_axis_sharpness(num_sgs), dtype=torch.float32, device=device)
         self.renderer = None
+        self.log_images = log_images
         # env_net:
         # Define model:
         layers_needed = int(log2(256) - 2)  # 256 = cam1.shape[1].value
@@ -141,12 +142,13 @@ class IlluminationNetwork(pl.LightningModule):
         sgs_loss = torch.nn.MSELoss()(sgs_joined, sgs_gt_joined)
         
         # vis:
-        self.set_renderer(batch_size)
-        with torch.no_grad():
-            sg_output = torch.zeros([batch_size, 3, 256, 512])
-            rendered_images = self.renderer.visualize_sgs(sgs_joined, sg_output)
-        
-        self.trainer.logger.experiment.add_image("SGS-Render", rendered_images, 0, dataformats="NCHW")
+        if self.log_images:
+            self.set_renderer(batch_size)
+            with torch.no_grad():
+                sg_output = torch.zeros([batch_size, 3, 256, 512])
+                rendered_images = self.renderer.visualize_sgs(sgs_joined, sg_output)
+            
+            self.trainer.logger.experiment.add_image("SGS-Render", rendered_images, 0, dataformats="NCHW")
         
         return sgs_loss
 
@@ -194,10 +196,10 @@ if __name__ == "__main__":
     # Training:
 
     model = IlluminationNetwork()
-
+    epochs = 10
     trainer = pl.Trainer(
         weights_summary="full",
-        max_epochs=10,
+        max_epochs=epochs,
         progress_bar_refresh_rate=25,  # to prevent notebook crashes in Google Colab environments
         gpus=1 if torch.cuda.is_available() else 0, # Use GPU if available
         profiler="simple",
@@ -217,6 +219,65 @@ if __name__ == "__main__":
     print("Prediction:")
     print(predictions[0])
     
+    import os
+    from pathlib import Path
+    import matplotlib.pyplot as plt
     
-    # Testing:
-    # trainer.test(ckpt_path="best")
+    result_dir = str(Path("Test_Results") / Path("illumination_model")) + "/"
+
+    # create a new folder Test_Results
+    # and save the depth and normal maps
+    if not os.path.exists(result_dir):
+        os.makedirs(result_dir)
+        
+    for i in range(3):
+        # Testing:
+        # trainer.test(ckpt_path="best")
+        sgs_joined = torch.cat([predictions[i], model.axis_sharpness], dim=-1)
+        renderer = rl.RenderingLayer(60, 0.7, torch.Size([1, 3, 256, 256]))
+        sg_output = torch.zeros([1, 3, 256, 512])
+        rendered_images = renderer.visualize_sgs(sgs_joined[None, ...], sg_output)
+        
+        rendered_images_norm = np.transpose(rendered_images.detach().numpy()[0], (1,2,0))
+        rendered_images_norm /= np.max(rendered_images_norm)
+        # rendered_images_norm = np.uint8(rendered_images_norm * 255 )
+        
+        # plt.imsave(result_dir + "sgs.png", np.uint8(rendered_images_norm * 255 ))
+        plt.imsave(result_dir + f"sgs_{i}_epochs_{epochs}.png", rendered_images_norm, vmin=0., vmax=1.)
+        
+        sgs_joined = torch.cat([targets[i], model.axis_sharpness], dim=-1)
+        renderer = rl.RenderingLayer(60, 0.7, torch.Size([1, 3, 256, 256]))
+        sg_output = torch.zeros([1, 3, 256, 512])
+        rendered_images = renderer.visualize_sgs(sgs_joined[None, ...], sg_output)
+        
+        rendered_images_norm = np.transpose(rendered_images.detach().numpy()[0], (1,2,0))
+        rendered_images_norm /= np.max(rendered_images_norm)
+        
+        # plt.imsave(result_dir + "sgs_gt.png", np.uint8(rendered_images_norm * 255 ))
+        plt.imsave(result_dir + f"sgs_gt_{i}.png", rendered_images_norm, vmin=0., vmax=1. )
+        
+    for i in range(5):
+        
+        # 3D Plot:
+        # plot the predictions and ground truth in 3d:
+        # create a new plot
+        fig = plt.figure()
+        # set the title to "targets"
+        fig.suptitle("targets r vs predictions b")
+        # create a 3d plot of the targets
+        ax = fig.add_subplot(111, projection='3d')
+        # plot the targets
+        ax.scatter(targets[i, :, 1], targets[i, :,  1], targets[i, :, 2], c='r', marker='o')
+        # present the plot
+        #plt.show()
+
+        predictions_detached = predictions.detach().numpy()
+        
+        # set the title to "predictions"
+        #fig.suptitle("predictions")
+        # create a 3d plot of the predictions
+        #ax = fig.add_subplot(111, projection='3d')
+        # plot the predictions
+        ax.scatter(predictions_detached[i, :, 0], predictions_detached[i, :, 1], predictions_detached[i, :, 2], c='b', marker='o')
+        # present the plot
+        plt.savefig(result_dir + f"3s_sgs_gt_comparison_{i}_epochs_{epochs}.png", bbox_inches='tight' )

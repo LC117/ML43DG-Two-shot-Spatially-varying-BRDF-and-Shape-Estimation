@@ -63,8 +63,9 @@ EPS = 1e-7
 
 
 def apply_mask(
-    img: torch.Tensor, mask: torch.Tensor, name: str, undefined: float = 0
+    img: torch.Tensor, mask: torch.Tensor, name: str = "", undefined: float = 0
 ) -> torch.Tensor:
+    # mask = mask.repeat(1, 3, 1, 1) # EXACTLY THE SAME:
     return torch.where(
         torch.less_equal(mask, 1e-5), torch.ones_like(img) * undefined, img
     )

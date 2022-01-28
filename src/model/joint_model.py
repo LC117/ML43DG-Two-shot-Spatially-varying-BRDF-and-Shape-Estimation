@@ -36,7 +36,7 @@ class JointNetwork(pl.LightningModule):
         light_intensity_lumen=45,
         num_sgs=24,
         rendering_loss: bool = False,
-        device="cpu"#"cuda:0"
+        device = "cpu" #"cuda:0"
     ):
         super().__init__()
         self.base_nf = base_nf
@@ -347,7 +347,7 @@ if __name__ == "__main__":
         # weights_summary="full",
         max_epochs=150,
         progress_bar_refresh_rate=25,  # to prevent notebook crashes in Google Colab environments
-        gpus=1,  # Use GPU if available
+        gpus=1 if torch.cuda.is_available() else 0,  # Use GPU if available
         profiler="simple",
         #precision=16,
     )
