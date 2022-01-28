@@ -50,7 +50,7 @@ class RenderingLayer(nn.Module):
         output_shape: torch.Size,
         #data_format: str = "channels_first" # want to remove this -> "channel_fist" is default in pytoch
         data_format = "channels_first",
-        device = "cuda:0"
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
     ):
         """
         @ DONE 
@@ -59,10 +59,6 @@ class RenderingLayer(nn.Module):
         self.fov = fov
         # self.data_format = layer_helper.normalize_data_format(data_format)
         self.data_format = data_format  
-
-        #device = "cuda:0"
-        #if not torch.cuda.is_available():
-        #    device = "cpu"
         self.device__ = device
 
         self.build(output_shape)
@@ -117,12 +113,8 @@ class RenderingLayer(nn.Module):
         Evaluate the rendering equation
         """
         #Setup":
-        assert (
-            sgs.shape[self._get_channel_axis()] == 7 and len(sgs.shape) == 3
-        )  # n, sgs, c
-        assert (
-            diffuse.shape[self._get_channel_axis()] == 3 and len(diffuse.shape) == 4
-        )
+        # assert (sgs.shape[self._get_channel_axis()] == 7 and len(sgs.shape) == 3)  # n, sgs, c
+        assert (diffuse.shape[self._get_channel_axis()] == 3 and len(diffuse.shape) == 4)
         assert (
             specular.shape[self._get_channel_axis()] == 3
             and len(specular.shape) == 4
@@ -131,9 +123,7 @@ class RenderingLayer(nn.Module):
             roughness.shape[self._get_channel_axis()] == 1
             and len(roughness.shape) == 4
         )
-        assert (
-            normal.shape[self._get_channel_axis()] == 3 and len(normal.shape) == 4
-        )
+        assert (normal.shape[self._get_channel_axis()] == 3 and len(normal.shape) == 4)
         assert mask.shape[self._get_channel_axis()] == 1 and len(mask.shape) == 4
         assert (
             camera_pos.shape[self._get_channel_axis()] == 3
@@ -209,7 +199,7 @@ class RenderingLayer(nn.Module):
             #     sg = sgs[:, :, i]
             # else:
             #     sg = sgs[:, i]
-            sg = sgs[:, :, i]
+            sg = sgs[:, i]
             evaled = self.sg_eval(
                 sg, diffuse, specular, roughness, n, mask, perturbed_mesh, vp
             )
@@ -510,7 +500,7 @@ class RenderingLayer(nn.Module):
         @ DONE 
         """
         # SG: (Spherical Gaussian)
-        assert sg.shape[self._get_channel_axis()] == 7 and len(sg.shape) == 2
+        # assert sg.shape[self._get_channel_axis()] == 7 and len(sg.shape) == 2
         assert (
             diffuse.shape[self._get_channel_axis()] == 3 and len(diffuse.shape) == 4
         )

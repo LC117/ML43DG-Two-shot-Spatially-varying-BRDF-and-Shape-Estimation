@@ -12,6 +12,7 @@ from torch import nn
 from src.data.dataloader_lightning import TwoShotBrdfDataLightning
 from src.utils.common_layers import INReLU, uncompressDepth, div_no_nan, binaerize_mask
 from src.utils.merge_conv import MergeConv
+from src.utils.losses import masked_loss
 
 from pathlib import Path
 
@@ -104,17 +105,6 @@ class ShapeNetwork(pl.LightningModule):
 
         return normal, depth
 
-    def masked_loss(self, pred, target, mask, loss):
-        _mask = binaerize_mask(mask)
-        # print("sum", torch.sum(_mask * (1 - _mask)), "sum", torch.sum(_mask), "sum", torch.sum(pred * _mask))
-        pred = pred * _mask
-        target = target * _mask
-        # count how many non-zero elements are in the mask
-        #n_nonzero = _mask.sum()
-        loss = loss(pred, target)
-        
-        return loss# / n_nonzero
-
     def configure_optimizers(self):
         # half learning rate after half of the epochs:
         # see: https://github.com/NVlabs/two-shot-brdf-shape/blob/352201b66bfa5cd5e25111451a6583a3e7d499f0/models/illumination_network.py#L238
@@ -142,8 +132,8 @@ class ShapeNetwork(pl.LightningModule):
         normal, depth = self.forward(x)
 
         # In the paper the following loss is a L2 loss, but the tf implementation uses L1:
-        normal_l1_loss = self.masked_loss(normal * 2 - 1, normal_gt * 2 - 1, mask, torch.nn.L1Loss())
-        depth_l1_loss = self.masked_loss( depth, depth_gt, mask, torch.nn.L1Loss())
+        normal_l1_loss = masked_loss(normal * 2 - 1, normal_gt * 2 - 1, mask, torch.nn.L1Loss())
+        depth_l1_loss = masked_loss( depth, depth_gt, mask, torch.nn.L1Loss())
         consistency_loss = 0
 
         if self.enable_consistency:
@@ -166,7 +156,7 @@ class ShapeNetwork(pl.LightningModule):
             
             # In the paper the following loss is a L1 loss, but the tf implementation uses L2:
             consistency_loss = self.consistency_loss_factor * \
-                               self.masked_loss(cn, normal, mask, torch.nn.MSELoss())
+                               masked_loss(cn, normal, mask, torch.nn.MSELoss())
 
         shape_loss = depth_l1_loss + normal_l1_loss + consistency_loss
 
