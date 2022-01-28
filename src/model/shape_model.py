@@ -267,8 +267,8 @@ if __name__ == "__main__":
         prefix = "../../" if execution_from_model else ""
 
         path_start = Path(prefix + "lightning_logs")
-        ckpt_path = Path("epoch=6-step=10828.ckpt")
-        ckpt_path = path_start / "version_141" / "checkpoints" / ckpt_path
+        ckpt_path = Path("epoch=10-step=17016.ckpt")
+        ckpt_path = path_start / "version_142" / "checkpoints" / ckpt_path
         resume_from_checkpoint = str(ckpt_path)
         model = ShapeNetwork.load_from_checkpoint(
             checkpoint_path=str(ckpt_path))
