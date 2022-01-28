@@ -263,7 +263,7 @@ if __name__ == "__main__":
 
     if resume_training:
         # check if the last to parts of the current execution path are src/model/
-        execution_from_model = "src" in str(Path(__file__)) and "model" in str(Path(__file__))
+        execution_from_model = "src" in os.getcwd() and "model" in os.getcwd()
         prefix = "../../" if execution_from_model else ""
 
         path_start = Path(prefix + "lightning_logs")
