@@ -59,6 +59,7 @@ def read_image(path: str, gray: bool = False) -> np.ndarray:
     else:
         img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
         if not gray:  # Ensure correct color space
+            # print(img)
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
     if gray:  # Ensure single channel for gray scale

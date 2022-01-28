@@ -1,12 +1,17 @@
 import os
+import typing
+from typing import Any, Optional
 
 import torch
 import numpy as np
 import pytorch_lightning as pl
+from pytorch_lightning import Callback
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 
 import torch.nn.functional as F
 from matplotlib import pyplot as plt
 from PIL import Image
+from pytorch_lightning.utilities.types import STEP_OUTPUT
 from torch import nn
 
 from src.data.dataloader_lightning import TwoShotBrdfDataLightning
@@ -88,7 +93,11 @@ class ShapeNetwork(pl.LightningModule):
         return
 
     def forward(self, x):
-        cam1, cam2, mask = x
+        if len(x) != 3:
+            # accept input from predictions
+            cam1, cam2, mask = x["cam1"], x["cam2"], x["mask"]
+        else:
+            cam1, cam2, mask = x
 
         cam1_cf = torch.cat((cam1, mask), dim=1)
         cam2_cf = torch.cat((cam2, mask), dim=1)
@@ -172,18 +181,6 @@ class ShapeNetwork(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         sgs_loss = self.general_step(batch, batch_idx)
         self.log("my_loss", sgs_loss, logger=True, on_step=True, on_epoch=True)
-
-        # batch_size = batch.shape[0]
-        # viz:
-        # TODO: Not sure if this is relevant for training, or only for logging examples to tensorboard..
-        # renderer = rl.RenderingLayer(60, 0.7, torch.Size([batch_size, 256, 256, 3]))
-        # sg_output = torch.zeros([batch_size, 256, 512, 3])
-        # renderer.visualize_sgs(sgs_joined, sg_output)
-
-        # if self.training:
-        # sg_gt_output = torch.zeros_like(sg_output)
-        # renderer.visualize_sgs(sgs_gt_joined, sg_gt_output, "sgs_gt")
-
         return {"loss": sgs_loss}
 
     def training_epoch_end(self, outputs):
@@ -209,90 +206,123 @@ class ShapeNetwork(pl.LightningModule):
         return {"test_loss": avg_loss}
 
 
+class SavePredictionCallback(Callback):
+    def __init__(self, dataloader, mode, batch_size):
+        super().__init__()
+        self.dataloader = dataloader
+        self.mode = mode
+        self.batch_size = batch_size
+
+    def on_predict_batch_end(
+            self,
+            trainer: "pl.Trainer",
+            pl_module: "pl.LightningModule",
+            outputs,
+            batch: Any,
+            batch_idx: int,
+            dataloader_idx: int,
+    ) -> None:
+        """Called when the train batch ends."""
+        normal, depth = outputs
+
+        #debug = str(type(normal.shape))
+        # store debug in a text file
+        #with open("debug.txt", "w") as f:
+        #    f.write(debug)
+
+        for img_id in range(normal.shape[0]):
+            idx = batch_idx * self.batch_size + img_id
+            save_dir = str(self.dataloader.dataset.gen_path(idx)) + "/"
+
+            # save the images
+            save_img(normal[img_id], save_dir, "normal_pred0", as_exr=True)
+            save_img(depth[img_id], save_dir, "depth_pred0", as_exr=True)
+
+    def on_validation_end(self, trainer, pl_module):
+        print("Validation is ending")
+
+    def on_test_end(self, trainer, pl_module):
+        print("Testing is ending")
+
+
 if __name__ == "__main__":
     # Training:
     numGPUs = torch.cuda.device_count()
     device = "cuda:0" if numGPUs else "cpu"
 
+    train = False
+    infer_mode = "overfit"
     resume_from_checkpoint = None
     resume_training = True
+    batch_size = 5
+    num_workers = 0
+    overfit = True
+    if overfit:
+        infer_mode = "overfit"
+        batch_size = 5
+
     if resume_training:
-        path_start = Path("../../lightning_logs")
-        ckpt_path = Path("epoch=3-step=6187.ckpt")
-        ckpt_path = path_start / "version_139" / "checkpoints" / ckpt_path
+        # check if the last to parts of the current execution path are src/model/
+        execution_from_model = "src" in str(Path(__file__)) and "model" in str(Path(__file__))
+        prefix = "../../" if execution_from_model else ""
+
+        path_start = Path(prefix + "lightning_logs")
+        ckpt_path = Path("epoch=6-step=10828.ckpt")
+        ckpt_path = path_start / "version_141" / "checkpoints" / ckpt_path
         resume_from_checkpoint = str(ckpt_path)
         model = ShapeNetwork.load_from_checkpoint(
             checkpoint_path=str(ckpt_path))
     else:
         model = ShapeNetwork(consistency_loss=0.5, device=device)  # downscale_steps=2, base_nf=4)
 
+    data = TwoShotBrdfDataLightning(mode="shape", overfit=overfit, num_workers=num_workers, batch_size=batch_size,
+                                    persistent_workers=num_workers > 0, pin_memory=numGPUs > 0)
+    dataloaders = {
+        "train": data.train_dataloader,
+        "val": data.val_dataloader,
+        "test": data.test_dataloader,
+        "overfit": data.val_dataloader,
+    }
+    callbacks = [] if train else [SavePredictionCallback(dataloaders[infer_mode](), infer_mode, batch_size)]
+
+    early_stop_callback = EarlyStopping(monitor="val_loss", patience=2, mode="min")
     trainer = pl.Trainer(
         #weights_summary="full",
         max_epochs=1 if numGPUs else 0,
         progress_bar_refresh_rate=25,  # to prevent notebook crashes in Google Colab environments
         gpus=numGPUs,  # Use GPU if available
         profiler="simple",
-        #resume_from_checkpoint=resume_from_checkpoint,
         #precision=16,
+        # callbacks=[early_stop_callback]
+        callbacks=callbacks
     )
 
-    data = TwoShotBrdfDataLightning(mode="shape", overfit=False, num_workers=4, batch_size=4, persistent_workers=True, pin_memory=True)
+    if train:
+        trainer.fit(model, train_dataloaders=data, ckpt_path=resume_from_checkpoint)
+    else:
+        trainer.predict(
+            model, dataloaders=dataloaders[infer_mode](), ckpt_path=resume_from_checkpoint)
 
-    # trainer.fit(model, train_dataloaders=data)
+    save_model = False
+    if save_model:
+        test_sample = data.val_dataloader().dataset[0]
 
-    test_sample = data.val_dataloader().dataset[0]
-    # remove depth and normal from the test sample dict
-    depth_gt = test_sample["depth"].squeeze(0)
-    normal_gt = (test_sample["normal"], (1, 2, 0))
-    #depth_gt = test_sample.pop("depth").squeeze(0)
-    #normal_gt = np.transpose(test_sample.pop("normal"), (1, 2, 0))
-    # make the cam1, cam2 and mask 4 dimensional
-    test_sample["cam1"] = torch.Tensor(test_sample["cam1"][None, ...])
-    test_sample["cam2"] = torch.Tensor(test_sample["cam2"][None, ...])
-    test_sample["mask"] = torch.Tensor(test_sample["mask"][None, ...])
-    normal, depth = model.forward((test_sample["cam1"], test_sample["cam2"], test_sample["mask"]))
+        depth_gt = test_sample["depth"].squeeze(0)
+        normal_gt = (test_sample["normal"], (1, 2, 0))
 
-    result_dir = str(Path("Test_Results") / Path("shape_model") / Path("validation")) + "/"
+        # make the cam1, cam2 and mask 4 dimensional
+        test_sample["cam1"] = torch.Tensor(test_sample["cam1"][None, ...])
+        test_sample["cam2"] = torch.Tensor(test_sample["cam2"][None, ...])
+        test_sample["mask"] = torch.Tensor(test_sample["mask"][None, ...])
+        normal, depth = model.forward((test_sample["cam1"], test_sample["cam2"], test_sample["mask"]))
 
-    save_img(normal, result_dir, "normal")
-    save_img(depth, result_dir, "depth")
+        result_dir = str(Path("Test_Results") / Path("shape_model") / Path("validation")) + "/"
 
-    for k in test_sample.keys():
-        save_img(test_sample[k], result_dir, k + "_gt")
+        save_img(normal, result_dir, "normal", as_exr=True)
+        save_img(depth, result_dir, "depth", as_exr=True)
 
-    """
-    normal = normal.permute(0, 2, 3, 1).squeeze(0)
-    depth = depth.squeeze(0).squeeze(0)
-    normal = normal.detach().cpu().numpy()
-    depth = depth.detach().cpu().numpy()
-
-    # create a new folder Test_Results
-    # and save the depth and normal maps
-    if not os.path.exists(result_dir):
-        os.makedirs(result_dir)
-
-    # save cam1 and cam2
-    cam1 = test_sample["cam1"].squeeze(0).detach().cpu().numpy()
-    cam2 = test_sample["cam2"].squeeze(0).detach().cpu().numpy()
-    cam1 = np.transpose(cam1, (1, 2, 0))
-    cam2 = np.transpose(cam2, (1, 2, 0))
-    plt.imsave(result_dir + "cam1.png", cam1, vmin=0, vmax=1)
-    plt.imsave(result_dir + "cam2.png", cam2, vmin=0, vmax=1)
-
-    # save mask
-    mask_img = test_sample["mask"][0].detach().cpu().numpy()[0, ...]
-    plt.imsave(result_dir + "mask.png", mask_img, cmap="gray", vmin=0, vmax=1)
-
-    # save the depth map using matplotlib
-    plt.imsave(result_dir + "depth.png", depth, cmap="gray", vmin=0, vmax=1)
-
-    # save the normal map as rgb using matplotlib
-    plt.imsave(result_dir + "normal.png", normal, vmin=0, vmax=1)
-
-    # save the depth_gt and normal_gt using matplotlib
-    plt.imsave(result_dir + "depth_gt.png", depth_gt, cmap="gray", vmin=0, vmax=1)
-    plt.imsave(result_dir + "normal_gt.png", normal_gt, vmin=0, vmax=1)
-    """
+        for k in test_sample.keys():
+            save_img(test_sample[k], result_dir, k + "_gt")
 
     print("DONE")
 

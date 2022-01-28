@@ -3,9 +3,10 @@ from pathlib import Path
 import os
 import torch
 import numpy as np
+from src.utils.preprocessing_utils import save
 
 
-def save_img(img, path, name):
+def save_img(img, path, name, use_plt=False, as_exr=False):
     """
     Save image to path
     """
@@ -24,12 +25,22 @@ def save_img(img, path, name):
     if img.shape[0] == 1 or img.shape[0] == 3:
         img = np.transpose(img, (1, 2, 0))
 
+    file_type = '.exr' if as_exr else '.png'
+    file_name = str(path) + name + file_type
+    file_name = file_name.replace('\\', '/')
+
     # unsqueeze single channel imgs
     if img.shape[2] == 1:
         img = np.squeeze(img, axis=2)
-        plt.imsave(path + name + ".png", img, cmap="gray", vmin=0, vmax=1)
+        if use_plt:
+            plt.imsave(file_name, img, cmap="gray", vmin=0, vmax=1)
+        else:
+            save(img, file_name, grayscale=True, alpha=False)
     else:
-        plt.imsave(path + name + ".png", img, vmin=0, vmax=1)
+        if use_plt:
+            plt.imsave(file_name, img, vmin=0, vmax=1)
+        else:
+            save(img, file_name, grayscale=False, alpha=False)
 
 
 """

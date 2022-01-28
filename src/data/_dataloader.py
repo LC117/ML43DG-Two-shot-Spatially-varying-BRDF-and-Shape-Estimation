@@ -105,46 +105,15 @@ class TwoShotBrdfData(Dataset):
 
         return res
 
-    """
-    def __getitem__(self, index):
-        #
-        #PyTorch requires you to provide a getitem implementation for your dataset.
-        #:param index: index of the dataset sample that will be returned
-        #:return: a dictionary of brdf data
-
-        item = self._gen_path(index)
-        res = {}
-        if self.mode in ["cams", "shape", "illumination", "all"]:
-            res = {
-                "cam1" :        readEXR(item / "cam1_env.exr")[0],
-                "cam2" :        readEXR(item / "cam2.exr")[0],
-                "mask" :        load_mono(item / "mask.png")
-            }
-        if self.mode in ["shape", "illumination", "all"]:
-            res.update({
-                "depth" :       readEXR(item / "depth.exr")[1],
-                "normal" :      readEXR(item / "normal.exr")[0],
-            })
-        if self.mode in ["illumination", "all"]:
-            res.update({
-                "sgs" :         np.load(item / "sgs.npy").astype(np.float32)
-            })
-        if self.mode == "all":
-            res.update({
-                "flash" :       readEXR(item / "cam1_flash.exr")[0],
-                "diffuse" :     load_rgb(item / "diffuse.png"),
-                "specular" :    load_rgb(item / "specular.png"),
-                "roughness" :   load_mono(item / "roughness.png")
-            })
-        return res
-    """
-
     def __len__(self):
         """
         :return: length of the dataset
         """
         s_idx_, e_idx_, n = self.items
         return (e_idx_ - s_idx_ + 1) * n
+
+    def gen_path(self, index):
+        return self._gen_path(index)
 
     def _gen_path(self, index):
         """

@@ -39,4 +39,9 @@ class TwoShotBrdfDataLightning(pl.LightningDataModule):
     def test_dataloader(self):
         return DataLoader(TwoShotBrdfData(split=self.test, training = False, mode=self.mode), batch_size=self.batch_size,
                           num_workers=self.num_workers, persistent_workers=self.persistent_workers, pin_memory=self.pin_memory)
+
+    def predict_dataloader(self):
+        return DataLoader(TwoShotBrdfData(split=self.val, training=True, mode=self.mode), batch_size=self.batch_size,
+                          num_workers=self.num_workers, persistent_workers=self.persistent_workers,
+                          pin_memory=self.pin_memory)
         
