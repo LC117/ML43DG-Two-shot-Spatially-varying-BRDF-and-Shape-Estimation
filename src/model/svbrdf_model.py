@@ -29,6 +29,7 @@ import src.utils.sg_utils as sg
 from src.utils.rendering_layer import *
 from src.utils.common_layers import *
 from src.utils.losses import masked_loss
+from src.utils.visualize_tools import save_img
 
 
 class SVBRDF_Network(pl.LightningModule):
@@ -337,13 +338,14 @@ class SavePredictionCallback(Callback):
         """Called when the train batch ends."""
         diffuse, specular, roughness = outputs
 
-        #for img_id in range(normal.shape[0]):
-        #    idx = batch_idx * self.batch_size + img_id
-        #    save_dir = str(self.dataloader.dataset.gen_path(idx)) + "/"
-        #
-        #    # save the images
-        #    save_img(normal[img_id], save_dir, "normal_pred0", as_exr=True)
-        #    save_img(depth[img_id], save_dir, "depth_pred0", as_exr=True)
+        for img_id in range(diffuse.shape[0]):
+            idx = batch_idx * self.batch_size + img_id
+            save_dir = str(self.dataloader.dataset.gen_path(idx)) + "/"
+        
+            # save the images
+            save_img(diffuse[img_id], save_dir, "diffuse_pred0")
+            save_img(specular[img_id], save_dir, "specular_pred0")
+            save_img(roughness[img_id], save_dir, "roughness_pred0")
 
     def on_validation_end(self, trainer, pl_module):
         print("Validation is ending")
@@ -366,8 +368,8 @@ if __name__ == "__main__":
     overfit = True
     save_model = True
     test_sample = True
-    train = True
-    infer = False
+    train = False
+    infer = True
     resume_training = False
     resume_training_version = 0
     resume_training_ckpt = "epoch=10-step=17016.ckpt"
