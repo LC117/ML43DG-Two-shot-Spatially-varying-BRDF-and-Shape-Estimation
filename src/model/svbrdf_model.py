@@ -154,7 +154,10 @@ class SVBRDF_Network(pl.LightningModule):
         return (int(pad_top), int(pad_bottom), int(pad_left), int(pad_right))
 
     def forward(self, x):
-        cam1, cam2, mask, normal, depth = x["cam1"], x["cam2"], x["mask"], x["normal"], x["depth"]
+        if type(x) == tuple:
+             cam1, cam2, mask, normal, depth = x
+        else:
+            cam1, cam2, mask, normal, depth = x["cam1"], x["cam2"], x["mask"], x["normal"], x["depth"]
         x = torch.cat([cam1, cam2, normal, depth, mask], dim=1)
 
         n_layers = int(log2(self.imgSize) - 2)
@@ -215,7 +218,7 @@ class SVBRDF_Network(pl.LightningModule):
         
     def general_step(self, batch, batch_idx):
         cam1, cam2, mask, normal, depth, sgs = batch["cam1"], batch["cam2"], batch["mask"], batch["normal"], batch["depth"], batch["sgs"]
-        x = batch#cam1, cam2, mask, normal, depth
+        x = cam1, cam2, mask, normal, depth
         gt_diffuse = batch["diffuse"]
         gt_specular = batch["specular"]
         gt_roughness = batch["roughness"]
@@ -377,11 +380,11 @@ if __name__ == "__main__":
     overfit = True
     save_model = True
     test_sample = True
-    train = False
-    infer = True
+    train = True
+    infer = False
     resume_training = False
-    resume_training_version = 0
-    resume_training_ckpt = "epoch=10-step=17016.ckpt"
+    resume_training_version = 2
+    resume_training_ckpt = "epoch=9-step=39.ckpt"
 
     if overfit:
         infer_mode = "overfit"
@@ -395,14 +398,14 @@ if __name__ == "__main__":
         prefix = "../../" if execution_from_model else ""
         path_start = Path(prefix + "lightning_logs")
         ckpt_path = Path(resume_training_ckpt)
-        ckpt_path = path_start / "version_" + str(resume_training_version) / "checkpoints" / ckpt_path
+        ckpt_path = path_start / f"version_{resume_training_version}" / "checkpoints" / ckpt_path
         resume_from_checkpoint = str(ckpt_path)
         model = SVBRDF_Network.load_from_checkpoint(
             checkpoint_path=str(ckpt_path))
     else:
         exit("Nothing to do! Set 'train' or 'infer' to true!")
 
-    data = TwoShotBrdfDataLightning(mode="svbrdf", overfit=overfit, num_workers=num_workers, batch_size=batch_size)
+    data = TwoShotBrdfDataLightning(mode="svbrdf", overfit=overfit, num_workers=num_workers, batch_size=batch_size, use_gt = True)
     dataloaders = {
         "train": data.train_dataloader,
         "val": data.val_dataloader,
@@ -439,13 +442,7 @@ if __name__ == "__main__":
         normal = torch.unsqueeze(torch.tensor(test_sample["normal"]), dim=0)
         depth = torch.unsqueeze(torch.tensor(test_sample["depth"]), dim=0)
 
-        x = {
-            "cam1": cam1,
-            "cam2": cam2,
-            "mask": mask,
-            "normal": normal,
-            "depth": depth
-        }
+        x = cam1, cam2, mask, normal, depth
         diffuse, specular, roughness = model.forward(x)
 
         diffuse = torch.squeeze(torch.moveaxis(diffuse, 1, 3)).detach().numpy()
