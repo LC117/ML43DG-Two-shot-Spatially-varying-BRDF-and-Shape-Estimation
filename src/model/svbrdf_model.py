@@ -357,7 +357,7 @@ class SavePredictionCallback(Callback):
             save_img(diffuse[img_id], save_dir, "diffuse_pred0")
             save_img(specular[img_id], save_dir, "specular_pred0")
             save_img(roughness[img_id], save_dir, "roughness_pred0")
-            save_img(rendered[img_id], save_dir, "rerendered_img")
+            save_img(rendered[img_id], save_dir, "rerender0", as_exr=True)
 
     def on_validation_end(self, trainer, pl_module):
         print("Validation is ending")
@@ -383,7 +383,7 @@ if __name__ == "__main__":
     train = True
     infer = False
     resume_training = False
-    resume_training_version = 2
+    resume_training_version = 5
     resume_training_ckpt = "epoch=9-step=39.ckpt"
 
     if overfit:
