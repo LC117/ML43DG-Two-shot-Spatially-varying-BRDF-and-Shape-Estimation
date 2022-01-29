@@ -9,6 +9,8 @@ import numpy as np
 from PIL import Image
 
 import pytorch_lightning as pl
+from pytorch_lightning import Callback
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 import torch 
 import torch.nn.functional as F
 from torch.nn.modules.conv import Conv2d
@@ -27,6 +29,7 @@ import src.utils.sg_utils as sg
 from src.utils.rendering_layer import *
 from src.utils.common_layers import *
 from src.utils.losses import masked_loss
+from src.utils.visualize_tools import save_img
 
 
 class SVBRDF_Network(pl.LightningModule):
@@ -151,7 +154,7 @@ class SVBRDF_Network(pl.LightningModule):
         return (int(pad_top), int(pad_bottom), int(pad_left), int(pad_right))
 
     def forward(self, x):
-        cam1, cam2, mask, normal, depth = x
+        cam1, cam2, mask, normal, depth = x["cam1"], x["cam2"], x["mask"], x["normal"], x["depth"]
         x = torch.cat([cam1, cam2, normal, depth, mask], dim=1)
 
         n_layers = int(log2(self.imgSize) - 2)
@@ -212,16 +215,13 @@ class SVBRDF_Network(pl.LightningModule):
         
     def general_step(self, batch, batch_idx):
         cam1, cam2, mask, normal, depth, sgs = batch["cam1"], batch["cam2"], batch["mask"], batch["normal"], batch["depth"], batch["sgs"]
-        x = cam1, cam2, mask, normal, depth
+        x = batch#cam1, cam2, mask, normal, depth
         gt_diffuse = batch["diffuse"]
         gt_specular = batch["specular"]
         gt_roughness = batch["roughness"]
 
         # Perform a forward pass on the network with inputs
         pred_diffuse, pred_specular, pred_roughness = self.forward(x)
-        # pred_diffuse = out[:, 0:3]
-        # pred_specular = out[:, 3:6]
-        # pred_roughness = torch.unsqueeze(out[:, 6], 1)
 
         loss_function = L1Loss()
 
@@ -233,14 +233,11 @@ class SVBRDF_Network(pl.LightningModule):
             loss = (loss_diffuse + loss_specular + loss_roughness) / 3.0
             return loss
         
-        # TODO With rendering loss!
+        # With rendering loss
         with torch.no_grad(): # Otherwise the losses become nan!
-            # mask = mask[:, 0:1]
             repeat = [1 for _ in range(len(mask.shape))]
             repeat[1] = 3
             mask3 = torch.tile(mask, repeat)
-            
-            # batch_size = cam1.shape[0]
 
             rendered = self.render(pred_diffuse, pred_specular, pred_roughness, normal, depth, sgs, mask3)
 
@@ -248,11 +245,8 @@ class SVBRDF_Network(pl.LightningModule):
             # Image.fromarray(np.uint8(np.transpose(cam1.detach().numpy()[0] * 255, (1, 2, 0)))).show()
             
             rerendered_log_pred = torch.clip(torch.log(1.0 + torch.relu(rendered)), 0.0, 13.0)
-            # rerendered_log = torch.nan_to_num(rerendered_log)
             loss_log_target = torch.clip(torch.log(1.0 + torch.relu(cam1)), 0.0, 13.0)
-            # loss_log = torch.nan_to_num(loss_log)
             
-            # l1_err = loss_function(loss_log, rerendered_log)
             rerendered_loss = masked_loss(rerendered_log_pred, loss_log_target, mask, loss_function)
 
         loss = (loss_diffuse + loss_specular + loss_roughness + rerendered_loss) / 4.0
@@ -286,10 +280,6 @@ class SVBRDF_Network(pl.LightningModule):
         sdiff = apply_mask(diffuse, mask3, "safe_diffuse", undefined=0.5)
         sspec = apply_mask(specular, mask3, "safe_specular", undefined=0.04)
         srogh = apply_mask(roughness, mask3[:, 0:1], "safe_roughness", undefined=0.4)
-
-        # normal_scale_ = torch.moveaxis(torch.ones_like(normal), 1, 3)
-        # normal_scale_ = normal_scale_ * torch.tensor([0.5, 0.5, 1.0], device=self.device__)
-        # normal_scale_ = torch.moveaxis(normal_scale_, 3, 1)
         
         snormal = torch.where(
             torch.less_equal(mask3, 1e-5),
@@ -312,7 +302,6 @@ class SVBRDF_Network(pl.LightningModule):
             device = self.device__
         )
         
-        # sgs_joined = torch.swapaxes(sgs_joined, 1, 2)
         rerendered = renderer.call(
             sdiff,
             sspec,
@@ -326,67 +315,165 @@ class SVBRDF_Network(pl.LightningModule):
             sgs_joined,
         )
         rerendered = apply_mask(rerendered, mask3, "masked_rerender")
-        # rerendered = torch.nan_to_num(rerendered)
         assert not torch.any(rerendered == torch.nan)
         return rerendered
+
+
+class SavePredictionCallback(Callback):
+    def __init__(self, dataloader, mode, batch_size):
+        super().__init__()
+        self.dataloader = dataloader
+        self.mode = mode
+        self.batch_size = batch_size
+
+    def on_predict_batch_end(
+            self,
+            trainer: "pl.Trainer",
+            pl_module: "pl.LightningModule",
+            outputs,
+            batch: Any,
+            batch_idx: int,
+            dataloader_idx: int,
+    ) -> None:
+        """Called when the train batch ends."""
+        diffuse, specular, roughness = outputs
+
+        # Create Rerender
+        mask, normal, depth, sgs = batch["mask"], batch["normal"], batch["depth"], batch["sgs"]
+        repeat = [1 for _ in range(len(mask.shape))]
+        repeat[1] = 3
+        mask3 = torch.tile(mask, repeat)
+
+        rendered = pl_module.render(diffuse, specular, roughness, normal, depth, sgs, mask3)
+
+        for img_id in range(diffuse.shape[0]):
+            idx = batch_idx * self.batch_size + img_id
+            save_dir = str(self.dataloader.dataset.gen_path(idx)) + "/"
+        
+            # save the images
+            save_img(diffuse[img_id], save_dir, "diffuse_pred0")
+            save_img(specular[img_id], save_dir, "specular_pred0")
+            save_img(roughness[img_id], save_dir, "roughness_pred0")
+            save_img(rendered[img_id], save_dir, "rerendered_img")
+
+    def on_validation_end(self, trainer, pl_module):
+        print("Validation is ending")
+
+    def on_test_end(self, trainer, pl_module):
+        print("Testing is ending")
 
 
 if __name__ == "__main__":
     print("================ SV-BRDF Network ================")
 
-    # Training:
+    # Execution Params:
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     gpus = 0
     if device == "cuda:0":
         gpus = 1
     batch_size = 3
     num_workers = 0
+    infer_mode = "train"
     overfit = True
+    save_model = True
+    test_sample = True
+    train = False
+    infer = True
+    resume_training = False
+    resume_training_version = 0
+    resume_training_ckpt = "epoch=10-step=17016.ckpt"
 
-    # Training
-    model = SVBRDF_Network(device = device)
-    # torch.autograd.set_detect_anomaly(True) 
+    if overfit:
+        infer_mode = "overfit"
+
+    model = None
+    if train and not resume_training:
+        # Training
+        model = SVBRDF_Network(device = device)
+    elif train and resume_training:
+        execution_from_model = "src" in os.getcwd() and "model" in os.getcwd()
+        prefix = "../../" if execution_from_model else ""
+        path_start = Path(prefix + "lightning_logs")
+        ckpt_path = Path(resume_training_ckpt)
+        ckpt_path = path_start / "version_" + str(resume_training_version) / "checkpoints" / ckpt_path
+        resume_from_checkpoint = str(ckpt_path)
+        model = SVBRDF_Network.load_from_checkpoint(
+            checkpoint_path=str(ckpt_path))
+    elif infer:
+        model = SVBRDF_Network(device = device)
+        model.load_state_dict(torch.load("src/trained_models/svbrdf_model"))
+        model.eval()
+    else:
+        exit("Nothing to do! Set 'train' or 'infer' to true!")
+
+    data = TwoShotBrdfDataLightning(mode="svbrdf", overfit=overfit, num_workers=num_workers, batch_size=batch_size)
+    dataloaders = {
+        "train": data.train_dataloader,
+        "val": data.val_dataloader,
+        "test": data.test_dataloader,
+        "overfit": data.val_dataloader,
+    }
+    callbacks = [] if train else [SavePredictionCallback(dataloaders[infer_mode](), infer_mode, batch_size)]
+
     trainer = pl.Trainer(
         weights_summary="full",
         max_epochs=10,
         progress_bar_refresh_rate=25,
         gpus = gpus,
         profiler="simple",
+        callbacks = callbacks
     )
 
-    data = TwoShotBrdfDataLightning(mode="svbrdf", overfit=overfit, num_workers=num_workers, batch_size=batch_size)
-    trainer.fit(model, train_dataloaders=data)
+    if train:
+        trainer.fit(model, train_dataloaders=data)
+    else:
+        trainer.predict(
+            model, dataloaders=dataloaders[infer_mode]())
 
-    test_sample = data.train_dataloader().dataset[0]
-    cam1 = torch.unsqueeze(torch.tensor(test_sample["cam1"]), dim=0)
-    cam2 = torch.unsqueeze(torch.tensor(test_sample["cam2"]), dim=0)
-    mask = torch.unsqueeze(torch.tensor(test_sample["mask"]), dim=0)
-    normal = torch.unsqueeze(torch.tensor(test_sample["normal"]), dim=0)
-    depth = torch.unsqueeze(torch.tensor(test_sample["depth"]), dim=0)
+    if save_model:
+        if not os.path.exists("src/trained_models/"):
+            os.makedirs("src/trained_models/")
+        torch.save(model.state_dict(), "src/trained_models/svbrdf_model")
 
-    x = cam1, cam2, mask, normal, depth
-    diffuse, specular, roughness = model.forward(x)
+    if test_sample:
+        test_sample = data.train_dataloader().dataset[0]
+        cam1 = torch.unsqueeze(torch.tensor(test_sample["cam1"]), dim=0)
+        cam2 = torch.unsqueeze(torch.tensor(test_sample["cam2"]), dim=0)
+        mask = torch.unsqueeze(torch.tensor(test_sample["mask"]), dim=0)
+        normal = torch.unsqueeze(torch.tensor(test_sample["normal"]), dim=0)
+        depth = torch.unsqueeze(torch.tensor(test_sample["depth"]), dim=0)
 
-    diffuse = torch.squeeze(torch.moveaxis(diffuse, 1, 3)).detach().numpy()
-    specular = torch.squeeze(torch.moveaxis(specular, 1, 3)).detach().numpy()
-    roughness = np.repeat(torch.squeeze(torch.moveaxis(roughness, 1, 3)).detach().numpy()[..., np.newaxis], 3, 2)
-    if not os.path.exists("TEST_SAMPLE/brdf/"):
-        os.makedirs("TEST_SAMPLE/brdf/")
+        x = {
+            "cam1": cam1,
+            "cam2": cam2,
+            "mask": mask,
+            "normal": normal,
+            "depth": depth
+        }
+        diffuse, specular, roughness = model.forward(x)
+
+        diffuse = torch.squeeze(torch.moveaxis(diffuse, 1, 3)).detach().numpy()
+        specular = torch.squeeze(torch.moveaxis(specular, 1, 3)).detach().numpy()
+        roughness = np.repeat(torch.squeeze(torch.moveaxis(roughness, 1, 3)).detach().numpy()[..., np.newaxis], 3, 2)
+        if not os.path.exists("Test_Results/brdf/"):
+            os.makedirs("Test_Results/brdf/")
     
-    gt_diffuse = np.moveaxis(test_sample["diffuse"], 0, 2)
-    gt_specular = np.moveaxis(test_sample["specular"], 0, 2)
-    gt_roughness = np.repeat(np.moveaxis(test_sample["roughness"], 0, 2), 3, 2)
+        gt_diffuse = np.moveaxis(test_sample["diffuse"], 0, 2)
+        gt_specular = np.moveaxis(test_sample["specular"], 0, 2)
+        gt_roughness = np.repeat(np.moveaxis(test_sample["roughness"], 0, 2), 3, 2)
 
-    # save the diffuse map as rgb using matplotlib
-    plt.imsave("TEST_SAMPLE/brdf/diffuse.png", diffuse)
-    # save the specular map as rgb using matplotlib
-    plt.imsave("TEST_SAMPLE/brdf/specular.png", specular)
-    # save the roughness map using matplotlib
-    plt.imsave("TEST_SAMPLE/brdf/roughness.png", roughness, cmap="gray")
+        # save the diffuse map as rgb using matplotlib
+        plt.imsave("Test_Results/brdf/diffuse.png", diffuse)
+        # save the specular map as rgb using matplotlib
+        plt.imsave("Test_Results/brdf/specular.png", specular)
+        # save the roughness map using matplotlib
+        plt.imsave("Test_Results/brdf/roughness.png", roughness, cmap="gray")
 
-    # save ground truth
-    plt.imsave("TEST_SAMPLE/brdf/diffuse_gt.png", gt_diffuse)
-    plt.imsave("TEST_SAMPLE/brdf/specular_gt.png", gt_specular)
-    plt.imsave("TEST_SAMPLE/brdf/roughness_gt.png", gt_roughness, cmap="gray")
+        # save ground truth
+        plt.imsave("Test_Results/brdf/diffuse_gt.png", gt_diffuse)
+        plt.imsave("Test_Results/brdf/specular_gt.png", gt_specular)
+        plt.imsave("Test_Results/brdf/roughness_gt.png", gt_roughness, cmap="gray")
+    
+    print("DONE")
 
 
