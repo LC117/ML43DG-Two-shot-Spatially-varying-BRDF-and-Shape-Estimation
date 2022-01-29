@@ -24,7 +24,7 @@ class TwoShotBrdfData(Dataset):
     #   [1]: filesystem end index
     #   [2]: items per folder
     items_subsets = {
-        "train": (1, 99, 1000),
+        "train": (32, 99, 1000),
         "val": (0, 0, 1000),
         "test": (0, 0, 20),
         "overfit": (0, 0, 10)
@@ -82,10 +82,16 @@ class TwoShotBrdfData(Dataset):
             })
             if not self.training:
                 return res
-            res.update({
-                "depth": self.read_and_transform(path_to_folder, ParameterNames.DEPTH),
-                "normal": self.read_and_transform(path_to_folder, ParameterNames.NORMAL)
-            })
+            if self.mode in ["inference", "shape", "svbrdf", "joined"]:
+                res.update({
+                    "depth": self.read_and_transform(path_to_folder, ParameterNames.DEPTH),
+                    "normal": self.read_and_transform(path_to_folder, ParameterNames.NORMAL)
+                })
+            if self.mode in ["inference", "illumination", "joined"]:
+                res.update({
+                    "depth_pred": self.read_and_transform(path_to_folder, ParameterNames.DEPTH_PRED),
+                    "normal_pred": self.read_and_transform(path_to_folder, ParameterNames.NORMAL_PRED)
+                })
 
         if self.mode in ["inference", "illumination", "svbrdf", "joined"]:
             res.update({
@@ -177,9 +183,19 @@ class TwoShotBrdfData(Dataset):
             depth = compressDepth(depth)
             return depth[np.newaxis, :, :, 0]
 
+        elif par_name == ParameterNames.DEPTH_PRED:
+            depth = read_image(str(path_to_folder / ParameterNames.DEPTH_PRED.value).replace("%d", "0"), True)
+            depth = compressDepth(depth)
+            return depth[np.newaxis, :, :, 0]
+
         elif par_name == ParameterNames.NORMAL:  # DONE
             # normal = np.transpose(pyexr.open(str(path_to_folder / ParameterNames.NORMAL)).get(), (2, 0, 1))
             normal = read_image(str(path_to_folder / ParameterNames.NORMAL.value), False)
+            return np.transpose(normal, (2, 0, 1))
+
+        elif par_name == ParameterNames.NORMAL_PRED:  # DONE
+            # normal = np.transpose(pyexr.open(str(path_to_folder / ParameterNames.NORMAL)).get(), (2, 0, 1))
+            normal = read_image(str(path_to_folder / ParameterNames.NORMAL_PRED.value).replace("%d", "0"), False)
             return np.transpose(normal, (2, 0, 1))
 
         elif par_name == ParameterNames.SGS:  # DONE

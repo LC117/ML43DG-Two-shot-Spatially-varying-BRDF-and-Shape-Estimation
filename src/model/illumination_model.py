@@ -121,7 +121,7 @@ class IlluminationNetwork(pl.LightningModule):
 
     def general_step(self, batch, batch_idx):
         # cam1, cam2, mask, normal, depth
-        x = batch["cam1"], batch["cam2"], batch["mask"], batch["normal"], batch["depth"]
+        x = batch["cam1"], batch["cam2"], batch["mask"], batch["normal_pred"], batch["depth_pred"]
         targets = batch["sgs"]
 
         # Perform a forward pass on the network with inputs
@@ -196,9 +196,9 @@ if __name__ == "__main__":
     # Training:
 
     model = IlluminationNetwork()
-    epochs = 10
+    epochs = 1000
     trainer = pl.Trainer(
-        weights_summary="full",
+        # weights_summary="full",
         max_epochs=epochs,
         progress_bar_refresh_rate=25,  # to prevent notebook crashes in Google Colab environments
         gpus=1 if torch.cuda.is_available() else 0, # Use GPU if available
@@ -210,7 +210,7 @@ if __name__ == "__main__":
     trainer.fit(model, train_dataloaders=data)
     
     batch = list(data.train_dataloader())[0]
-    x = batch["cam1"], batch["cam2"], batch["mask"], batch["normal"], batch["depth"]
+    x = batch["cam1"], batch["cam2"], batch["mask"], batch["normal_pred"], batch["depth_pred"]
     targets = batch["sgs"]
     predictions = model.forward(x)
     
@@ -233,7 +233,7 @@ if __name__ == "__main__":
     for i in range(3):
         # Testing:
         # trainer.test(ckpt_path="best")
-        sgs_joined = torch.cat([predictions[i], model.axis_sharpness], dim=-1)
+        sgs_joined = torch.cat([predictions[i], model.axis_sharpness.detach().cpu()], dim=-1)
         renderer = rl.RenderingLayer(60, 0.7, torch.Size([1, 3, 256, 256]))
         sg_output = torch.zeros([1, 3, 256, 512])
         rendered_images = renderer.visualize_sgs(sgs_joined[None, ...], sg_output)
@@ -245,7 +245,7 @@ if __name__ == "__main__":
         # plt.imsave(result_dir + "sgs.png", np.uint8(rendered_images_norm * 255 ))
         plt.imsave(result_dir + f"sgs_{i}_epochs_{epochs}.png", rendered_images_norm, vmin=0., vmax=1.)
         
-        sgs_joined = torch.cat([targets[i], model.axis_sharpness], dim=-1)
+        sgs_joined = torch.cat([targets[i], model.axis_sharpness.detach().cpu()], dim=-1)
         renderer = rl.RenderingLayer(60, 0.7, torch.Size([1, 3, 256, 256]))
         sg_output = torch.zeros([1, 3, 256, 512])
         rendered_images = renderer.visualize_sgs(sgs_joined[None, ...], sg_output)

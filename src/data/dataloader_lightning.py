@@ -27,12 +27,12 @@ class TwoShotBrdfDataLightning(pl.LightningDataModule):
         self.test =     "test"  if not overfit else "overfit"
 
     def train_dataloader(self):
-        return DataLoader(TwoShotBrdfData(split=self.train, training = True, mode=self.mode), batch_size=self.batch_size,
+        return DataLoader(TwoShotBrdfData(split=self.train, training=True, mode=self.mode), batch_size=self.batch_size,
                           num_workers=self.num_workers, persistent_workers=self.persistent_workers,
                           pin_memory=self.pin_memory, shuffle=self.shuffle)
 
     def val_dataloader(self):
-        return DataLoader(TwoShotBrdfData(split=self.val, training = True, mode=self.mode), batch_size=self.batch_size,
+        return DataLoader(TwoShotBrdfData(split=self.val, training=True, mode=self.mode), batch_size=self.batch_size,
                           num_workers=self.num_workers, persistent_workers=self.persistent_workers,
                           pin_memory=self.pin_memory)
 
@@ -41,7 +41,7 @@ class TwoShotBrdfDataLightning(pl.LightningDataModule):
                           num_workers=self.num_workers, persistent_workers=self.persistent_workers, pin_memory=self.pin_memory)
 
     def predict_dataloader(self):
-        return DataLoader(TwoShotBrdfData(split=self.val, training=True, mode=self.mode), batch_size=self.batch_size,
+        return DataLoader(TwoShotBrdfData(split=self.val, training=False, mode=self.mode), batch_size=self.batch_size,
                           num_workers=self.num_workers, persistent_workers=self.persistent_workers,
                           pin_memory=self.pin_memory)
         

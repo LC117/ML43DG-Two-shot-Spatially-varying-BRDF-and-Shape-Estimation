@@ -29,8 +29,8 @@ class ParameterNames(Enum):
     DIFFUSE_PRED = "diffuse-pred%d.png"
     SPECULAR_PRED = "specular-pred%d.png"
     ROUGHNESS_PRED = "roughness-pred%d.png"
-    NORMAL_PRED = "normal-pred%d.exr"
-    DEPTH_PRED = "depth-pred%d.exr"
+    NORMAL_PRED = "normal_pred%d.exr"
+    DEPTH_PRED = "depth_pred%d.exr"
     SGS_PRED = "sgs-pred.npy"
     RERENDER = "rerender%d.exr"
 
