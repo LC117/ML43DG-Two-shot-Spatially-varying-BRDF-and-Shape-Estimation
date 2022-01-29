@@ -10,6 +10,7 @@ src/data/CVPR20-TwoShotBRDFAndShapeDataset/
 # Results
 Test_Results/
 src/model/Test_Results/
+src/trained_models/
 
 # C extensions
 *.so

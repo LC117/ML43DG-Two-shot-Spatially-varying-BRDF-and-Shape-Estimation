@@ -342,6 +342,8 @@ if __name__ == "__main__":
     batch_size = 3
     num_workers = 0
     overfit = True
+    save_model = True
+    test_sample = True
 
     # Training
     model = SVBRDF_Network(device = device)
@@ -357,36 +359,44 @@ if __name__ == "__main__":
     data = TwoShotBrdfDataLightning(mode="svbrdf", overfit=overfit, num_workers=num_workers, batch_size=batch_size)
     trainer.fit(model, train_dataloaders=data)
 
-    test_sample = data.train_dataloader().dataset[0]
-    cam1 = torch.unsqueeze(torch.tensor(test_sample["cam1"]), dim=0)
-    cam2 = torch.unsqueeze(torch.tensor(test_sample["cam2"]), dim=0)
-    mask = torch.unsqueeze(torch.tensor(test_sample["mask"]), dim=0)
-    normal = torch.unsqueeze(torch.tensor(test_sample["normal"]), dim=0)
-    depth = torch.unsqueeze(torch.tensor(test_sample["depth"]), dim=0)
+    if save_model:
+        if not os.path.exists("src/trained_models/"):
+            os.makedirs("src/trained_models/")
+        torch.save(model.state_dict(), "src/trained_models/svbrdf_model")
 
-    x = cam1, cam2, mask, normal, depth
-    diffuse, specular, roughness = model.forward(x)
+    if test_sample:
+        test_sample = data.train_dataloader().dataset[0]
+        cam1 = torch.unsqueeze(torch.tensor(test_sample["cam1"]), dim=0)
+        cam2 = torch.unsqueeze(torch.tensor(test_sample["cam2"]), dim=0)
+        mask = torch.unsqueeze(torch.tensor(test_sample["mask"]), dim=0)
+        normal = torch.unsqueeze(torch.tensor(test_sample["normal"]), dim=0)
+        depth = torch.unsqueeze(torch.tensor(test_sample["depth"]), dim=0)
 
-    diffuse = torch.squeeze(torch.moveaxis(diffuse, 1, 3)).detach().numpy()
-    specular = torch.squeeze(torch.moveaxis(specular, 1, 3)).detach().numpy()
-    roughness = np.repeat(torch.squeeze(torch.moveaxis(roughness, 1, 3)).detach().numpy()[..., np.newaxis], 3, 2)
-    if not os.path.exists("TEST_SAMPLE/brdf/"):
-        os.makedirs("TEST_SAMPLE/brdf/")
+        x = cam1, cam2, mask, normal, depth
+        diffuse, specular, roughness = model.forward(x)
+
+        diffuse = torch.squeeze(torch.moveaxis(diffuse, 1, 3)).detach().numpy()
+        specular = torch.squeeze(torch.moveaxis(specular, 1, 3)).detach().numpy()
+        roughness = np.repeat(torch.squeeze(torch.moveaxis(roughness, 1, 3)).detach().numpy()[..., np.newaxis], 3, 2)
+        if not os.path.exists("Test_Results/brdf/"):
+            os.makedirs("Test_Results/brdf/")
     
-    gt_diffuse = np.moveaxis(test_sample["diffuse"], 0, 2)
-    gt_specular = np.moveaxis(test_sample["specular"], 0, 2)
-    gt_roughness = np.repeat(np.moveaxis(test_sample["roughness"], 0, 2), 3, 2)
+        gt_diffuse = np.moveaxis(test_sample["diffuse"], 0, 2)
+        gt_specular = np.moveaxis(test_sample["specular"], 0, 2)
+        gt_roughness = np.repeat(np.moveaxis(test_sample["roughness"], 0, 2), 3, 2)
 
-    # save the diffuse map as rgb using matplotlib
-    plt.imsave("TEST_SAMPLE/brdf/diffuse.png", diffuse)
-    # save the specular map as rgb using matplotlib
-    plt.imsave("TEST_SAMPLE/brdf/specular.png", specular)
-    # save the roughness map using matplotlib
-    plt.imsave("TEST_SAMPLE/brdf/roughness.png", roughness, cmap="gray")
+        # save the diffuse map as rgb using matplotlib
+        plt.imsave("Test_Results/brdf/diffuse.png", diffuse)
+        # save the specular map as rgb using matplotlib
+        plt.imsave("Test_Results/brdf/specular.png", specular)
+        # save the roughness map using matplotlib
+        plt.imsave("Test_Results/brdf/roughness.png", roughness, cmap="gray")
 
-    # save ground truth
-    plt.imsave("TEST_SAMPLE/brdf/diffuse_gt.png", gt_diffuse)
-    plt.imsave("TEST_SAMPLE/brdf/specular_gt.png", gt_specular)
-    plt.imsave("TEST_SAMPLE/brdf/roughness_gt.png", gt_roughness, cmap="gray")
+        # save ground truth
+        plt.imsave("Test_Results/brdf/diffuse_gt.png", gt_diffuse)
+        plt.imsave("Test_Results/brdf/specular_gt.png", gt_specular)
+        plt.imsave("Test_Results/brdf/roughness_gt.png", gt_roughness, cmap="gray")
+    
+    print("DONE")
 
 
