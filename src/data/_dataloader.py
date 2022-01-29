@@ -24,7 +24,7 @@ class TwoShotBrdfData(Dataset):
     #   [1]: filesystem end index
     #   [2]: items per folder
     items_subsets = {
-        "train": (32, 99, 1000),
+        "train": (1, 99, 1000),
         "val": (0, 0, 1000),
         "test": (0, 0, 20),
         "overfit": (0, 0, 10)

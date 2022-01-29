@@ -1,8 +1,11 @@
+from typing import Any
+
 import torch
 import numpy as np
 import pytorch_lightning as pl
 
-import torch.nn.functional as F
+from pytorch_lightning import Callback
+from pytorch_lightning.callbacks import EarlyStopping
 from torch import nn
 from math import log2
 
@@ -10,7 +13,10 @@ import src.utils.rendering_layer as rl
 import src.utils.sg_utils as sg
 from src.data.dataloader_lightning import TwoShotBrdfDataLightning
 from src.utils.common_layers import INReLU
-from PIL import Image
+from src.utils.preprocessing_utils import save
+
+from pathlib import Path
+import os
 
 MAX_VAL = 2
 
@@ -192,9 +198,43 @@ class IlluminationNetwork(pl.LightningModule):
             self.renderer = rl.RenderingLayer(60, 0.7, torch.Size([batch_size, 3, 256, 256]))
 
 
+class SavePredictionCallback(Callback):
+    def __init__(self, dataloader, mode, batch_size):
+        super().__init__()
+        self.dataloader = dataloader
+        self.mode = mode
+        self.batch_size = batch_size
+
+    def on_predict_batch_end(
+            self,
+            trainer: "pl.Trainer",
+            pl_module: "pl.LightningModule",
+            outputs,
+            batch: Any,
+            batch_idx: int,
+            dataloader_idx: int,
+    ) -> None:
+        """Called when the train batch ends."""
+        sgs = outputs
+
+        #debug = str(type(normal.shape))
+        # store debug in a text file
+        #with open("debug.txt", "w") as f:
+        #    f.write(debug)
+
+        for img_id in range(sgs.shape[0]):
+            idx = batch_idx * self.batch_size + img_id
+            save_dir = str(self.dataloader.dataset.gen_path(idx)) + "/"
+
+            # save the sgs: TODO!
+            save(sgs[img_id], save_dir + "sgs.npy")
+            #save_img(normal[img_id], save_dir, "normal_pred0", as_exr=True)
+            #save_img(depth[img_id], save_dir, "depth_pred0", as_exr=True)
+
+
 if __name__ == "__main__":
     # Training:
-
+    """
     model = IlluminationNetwork()
     epochs = 1000
     trainer = pl.Trainer(
@@ -208,76 +248,140 @@ if __name__ == "__main__":
     data = TwoShotBrdfDataLightning(mode="illumination", overfit=True, num_workers=0)
 
     trainer.fit(model, train_dataloaders=data)
-    
-    batch = list(data.train_dataloader())[0]
-    x = batch["cam1"], batch["cam2"], batch["mask"], batch["normal_pred"], batch["depth_pred"]
-    targets = batch["sgs"]
-    predictions = model.forward(x)
-    
-    print("Truths:")
-    print(targets[0])
-    print("Prediction:")
-    print(predictions[0])
-    
-    import os
-    from pathlib import Path
-    import matplotlib.pyplot as plt
-    
-    result_dir = str(Path("Test_Results") / Path("illumination_model")) + "/"
+    """
 
-    # create a new folder Test_Results
-    # and save the depth and normal maps
-    if not os.path.exists(result_dir):
-        os.makedirs(result_dir)
-        
-    for i in range(3):
-        # Testing:
-        # trainer.test(ckpt_path="best")
-        sgs_joined = torch.cat([predictions[i], model.axis_sharpness.detach().cpu()], dim=-1)
-        renderer = rl.RenderingLayer(60, 0.7, torch.Size([1, 3, 256, 256]))
-        sg_output = torch.zeros([1, 3, 256, 512])
-        rendered_images = renderer.visualize_sgs(sgs_joined[None, ...], sg_output)
-        
-        rendered_images_norm = np.transpose(rendered_images.detach().numpy()[0], (1,2,0))
-        rendered_images_norm /= np.max(rendered_images_norm)
-        # rendered_images_norm = np.uint8(rendered_images_norm * 255 )
-        
-        # plt.imsave(result_dir + "sgs.png", np.uint8(rendered_images_norm * 255 ))
-        plt.imsave(result_dir + f"sgs_{i}_epochs_{epochs}.png", rendered_images_norm, vmin=0., vmax=1.)
-        
-        sgs_joined = torch.cat([targets[i], model.axis_sharpness.detach().cpu()], dim=-1)
-        renderer = rl.RenderingLayer(60, 0.7, torch.Size([1, 3, 256, 256]))
-        sg_output = torch.zeros([1, 3, 256, 512])
-        rendered_images = renderer.visualize_sgs(sgs_joined[None, ...], sg_output)
-        
-        rendered_images_norm = np.transpose(rendered_images.detach().numpy()[0], (1,2,0))
-        rendered_images_norm /= np.max(rendered_images_norm)
-        
-        # plt.imsave(result_dir + "sgs_gt.png", np.uint8(rendered_images_norm * 255 ))
-        plt.imsave(result_dir + f"sgs_gt_{i}.png", rendered_images_norm, vmin=0., vmax=1. )
-        
-    for i in range(5):
-        
-        # 3D Plot:
-        # plot the predictions and ground truth in 3d:
-        # create a new plot
-        fig = plt.figure()
-        # set the title to "targets"
-        fig.suptitle("targets r vs predictions b")
-        # create a 3d plot of the targets
-        ax = fig.add_subplot(111, projection='3d')
-        # plot the targets
-        ax.scatter(targets[i, :, 1], targets[i, :,  1], targets[i, :, 2], c='r', marker='o')
-        # present the plot
-        #plt.show()
+    numGPUs = torch.cuda.device_count()
+    device = "cuda:0" if numGPUs else "cpu"
 
-        predictions_detached = predictions.detach().numpy()
-        
-        # set the title to "predictions"
-        #fig.suptitle("predictions")
-        # create a 3d plot of the predictions
-        #ax = fig.add_subplot(111, projection='3d')
-        # plot the predictions
-        ax.scatter(predictions_detached[i, :, 0], predictions_detached[i, :, 1], predictions_detached[i, :, 2], c='b', marker='o')
-        # present the plot
-        plt.savefig(result_dir + f"3s_sgs_gt_comparison_{i}_epochs_{epochs}.png", bbox_inches='tight' )
+    train = True
+    infer_mode = "overfit"
+    resume_from_checkpoint = None
+    resume_training = False
+    batch_size = 8
+    num_workers = 0
+    overfit = infer_mode == "overfit"
+    epochs = 200
+
+    if overfit:
+        infer_mode = "overfit"
+        batch_size = 5
+
+    if not train:
+        epochs = 1
+
+    if resume_training:
+        # check if the last to parts of the current execution path are src/model/
+        execution_from_model = "src" in os.getcwd() and "model" in os.getcwd()
+        prefix = "../../" if execution_from_model else ""
+
+        path_start = Path(prefix + "lightning_logs")
+        ckpt_path = Path("epoch=10-step=17016.ckpt")
+        ckpt_path = path_start / "version_142" / "checkpoints" / ckpt_path
+        resume_from_checkpoint = str(ckpt_path)
+        model = IlluminationNetwork.load_from_checkpoint(
+            checkpoint_path=str(ckpt_path))
+    else:
+        model = IlluminationNetwork()
+
+    data = TwoShotBrdfDataLightning(mode="illumination", overfit=overfit, num_workers=num_workers, batch_size=batch_size,
+                                    persistent_workers=num_workers > 0, pin_memory=numGPUs > 0, shuffle=train)
+    dataloaders = {
+        "train": data.train_dataloader,
+        "val": data.val_dataloader,
+        "test": data.test_dataloader,
+        "overfit": data.val_dataloader,
+    }
+    callbacks = [] if train else [SavePredictionCallback(dataloaders[infer_mode](), infer_mode, batch_size)]
+
+    early_stop_callback = EarlyStopping(monitor="val_loss", patience=2, mode="min")
+    trainer = pl.Trainer(
+        # weights_summary="full",
+        max_epochs=epochs if numGPUs else 0,
+        progress_bar_refresh_rate=25,  # to prevent notebook crashes in Google Colab environments
+        gpus=numGPUs,  # Use GPU if available
+        profiler="simple",
+        # precision=16,
+        # callbacks=[early_stop_callback]
+        callbacks=callbacks
+    )
+
+    if train:
+        trainer.fit(model, train_dataloaders=data, ckpt_path=resume_from_checkpoint)
+    else:
+        trainer.predict(
+            model, dataloaders=dataloaders[infer_mode](), ckpt_path=resume_from_checkpoint)
+
+    save_model = False
+    if save_model:
+        batch = list(data.train_dataloader())[0]
+        x = batch["cam1"], batch["cam2"], batch["mask"], batch["normal_pred"], batch["depth_pred"]
+        targets = batch["sgs"]
+        predictions = model.forward(x)
+
+        print("Truths:")
+        print(targets[0])
+        print("Prediction:")
+        print(predictions[0])
+
+        import os
+        from pathlib import Path
+        import matplotlib.pyplot as plt
+
+        result_dir = str(Path("Test_Results") / Path("illumination_model")) + "/"
+
+        # create a new folder Test_Results
+        # and save the depth and normal maps
+        if not os.path.exists(result_dir):
+            os.makedirs(result_dir)
+
+        for i in range(3):
+            # Testing:
+            # trainer.test(ckpt_path="best")
+            sgs_joined = torch.cat([predictions[i], model.axis_sharpness.detach().cpu()], dim=-1)
+            renderer = rl.RenderingLayer(60, 0.7, torch.Size([1, 3, 256, 256]))
+            sg_output = torch.zeros([1, 3, 256, 512])
+            rendered_images = renderer.visualize_sgs(sgs_joined[None, ...], sg_output)
+
+            rendered_images_norm = np.transpose(rendered_images.detach().numpy()[0], (1,2,0))
+            rendered_images_norm /= np.max(rendered_images_norm)
+            # rendered_images_norm = np.uint8(rendered_images_norm * 255 )
+
+            # plt.imsave(result_dir + "sgs.png", np.uint8(rendered_images_norm * 255 ))
+            plt.imsave(result_dir + f"sgs_{i}_epochs_{epochs}.png", rendered_images_norm, vmin=0., vmax=1.)
+
+            sgs_joined = torch.cat([targets[i], model.axis_sharpness.detach().cpu()], dim=-1)
+            renderer = rl.RenderingLayer(60, 0.7, torch.Size([1, 3, 256, 256]))
+            sg_output = torch.zeros([1, 3, 256, 512])
+            rendered_images = renderer.visualize_sgs(sgs_joined[None, ...], sg_output)
+
+            rendered_images_norm = np.transpose(rendered_images.detach().numpy()[0], (1,2,0))
+            rendered_images_norm /= np.max(rendered_images_norm)
+
+            # plt.imsave(result_dir + "sgs_gt.png", np.uint8(rendered_images_norm * 255 ))
+            plt.imsave(result_dir + f"sgs_gt_{i}.png", rendered_images_norm, vmin=0., vmax=1. )
+
+        for i in range(5):
+
+            # 3D Plot:
+            # plot the predictions and ground truth in 3d:
+            # create a new plot
+            fig = plt.figure()
+            # set the title to "targets"
+            fig.suptitle("targets r vs predictions b")
+            # create a 3d plot of the targets
+            ax = fig.add_subplot(111, projection='3d')
+            # plot the targets
+            ax.scatter(targets[i, :, 1], targets[i, :,  1], targets[i, :, 2], c='r', marker='o')
+            # present the plot
+            #plt.show()
+
+            predictions_detached = predictions.detach().numpy()
+
+            # set the title to "predictions"
+            #fig.suptitle("predictions")
+            # create a 3d plot of the predictions
+            #ax = fig.add_subplot(111, projection='3d')
+            # plot the predictions
+            ax.scatter(predictions_detached[i, :, 0], predictions_detached[i, :, 1], predictions_detached[i, :, 2], c='b', marker='o')
+            # present the plot
+            plt.savefig(result_dir + f"3s_sgs_gt_comparison_{i}_epochs_{epochs}.png", bbox_inches='tight' )

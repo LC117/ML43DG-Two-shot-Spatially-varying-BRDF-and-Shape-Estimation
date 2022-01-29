@@ -238,12 +238,6 @@ class SavePredictionCallback(Callback):
             save_img(normal[img_id], save_dir, "normal_pred0", as_exr=True)
             save_img(depth[img_id], save_dir, "depth_pred0", as_exr=True)
 
-    def on_validation_end(self, trainer, pl_module):
-        print("Validation is ending")
-
-    def on_test_end(self, trainer, pl_module):
-        print("Testing is ending")
-
 
 if __name__ == "__main__":
     # Training:
