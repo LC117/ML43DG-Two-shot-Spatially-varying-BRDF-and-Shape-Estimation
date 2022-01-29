@@ -37,11 +37,12 @@ class TwoShotBrdfData(Dataset):
         "overfit": "CVPR20-TwoShotBRDFAndShapeDataset/overfit/"
     }
 
-    def __init__(self, split, training, mode="joined"):
+    def __init__(self, split, training, mode="joined", gt = "theirs"):
         """
-        :param training: bool -> Set to False for inference, to True for training!
         :param split: one of 'train', 'val', 'test' or 'overfit' - for training, validation or overfitting split
+        :param training: bool -> Set to False for inference, to True for training!
         :param mode: one of 'inference', 'shape', 'illumination', 'svbrdf'/'joined' - We do not need to load all the data for training the first two networks
+        :param gt: Ground truth, either use ground truth from the dataset 'theirs', or use predictions from previous passes 'ours'
         """
         super().__init__()
 
@@ -55,6 +56,8 @@ class TwoShotBrdfData(Dataset):
         self.split = split
         self.storeData = split == "overfit"
         self.data = {}
+        self.gt = gt
+        assert(self.gt in ["ours", "theirs"])
 
         self.training = training  # Set to False for inference!
 
@@ -74,38 +77,73 @@ class TwoShotBrdfData(Dataset):
 
         path_to_folder = self._gen_path(index)
         res = {}
-        if self.mode in ["inference", "shape", "illumination", "svbrdf", "joined"]:
+        
+        if self.mode in ["inference", "shape", "illumination", "svbrdf", "joint"]:
             res.update({
                 "cam1": self.read_and_transform(path_to_folder, ParameterNames.INPUT_1),
                 "cam2": self.read_and_transform(path_to_folder, ParameterNames.INPUT_2),
                 "mask": self.read_and_transform(path_to_folder, ParameterNames.MASK)
             })
-            if not self.training:
-                return res
-            if self.mode in ["inference", "shape", "svbrdf", "joined"]:
+        else:
+            raise RuntimeError("Dataloader Mode not valid!")
+        
+        if not self.training:
+            return res
+
+        if self.mode == "shape":
+            res.update({
+                "depth": self.read_and_transform(path_to_folder, ParameterNames.DEPTH),
+                "normal": self.read_and_transform(path_to_folder, ParameterNames.NORMAL)
+            })
+        elif self.mode == "illumination":
+            if self.gt == "theirs":
                 res.update({
                     "depth": self.read_and_transform(path_to_folder, ParameterNames.DEPTH),
-                    "normal": self.read_and_transform(path_to_folder, ParameterNames.NORMAL)
+                    "normal": self.read_and_transform(path_to_folder, ParameterNames.NORMAL),
+                    "sgs": self.read_and_transform(path_to_folder, ParameterNames.SGS)
                 })
-            if self.mode in ["inference", "illumination", "joined"]:
+            else:
                 res.update({
                     "depth_pred": self.read_and_transform(path_to_folder, ParameterNames.DEPTH_PRED),
-                    "normal_pred": self.read_and_transform(path_to_folder, ParameterNames.NORMAL_PRED)
+                    "normal_pred": self.read_and_transform(path_to_folder, ParameterNames.NORMAL_PRED),
+                    "sgs": self.read_and_transform(path_to_folder, ParameterNames.SGS)
                 })
-
-        if self.mode in ["inference", "illumination", "svbrdf", "joined"]:
+        elif self.mode == "svbrdf":
+            if self.gt == "theirs":
+                res.update({
+                    "depth": self.read_and_transform(path_to_folder, ParameterNames.DEPTH),
+                    "normal": self.read_and_transform(path_to_folder, ParameterNames.NORMAL),
+                    "sgs": self.read_and_transform(path_to_folder, ParameterNames.SGS),
+                    "diffuse": self.read_and_transform(path_to_folder, ParameterNames.DIFFUSE),
+                    "specular": self.read_and_transform(path_to_folder, ParameterNames.SPECULAR),
+                    "roughness": self.read_and_transform(path_to_folder, ParameterNames.ROUGHNESS)
+                })
+            else:
+                res.update({
+                    "depth": self.read_and_transform(path_to_folder, ParameterNames.DEPTH_PRED),
+                    "normal": self.read_and_transform(path_to_folder, ParameterNames.NORMAL_PRED),
+                    "sgs": self.read_and_transform(path_to_folder, ParameterNames.SGS_PRED),
+                    "diffuse": self.read_and_transform(path_to_folder, ParameterNames.DIFFUSE),
+                    "specular": self.read_and_transform(path_to_folder, ParameterNames.SPECULAR),
+                    "roughness": self.read_and_transform(path_to_folder, ParameterNames.ROUGHNESS)
+                })
+        elif self.mode == "joint":
             res.update({
-                "sgs": self.read_and_transform(path_to_folder, ParameterNames.SGS)
+                "depth": self.read_and_transform(path_to_folder, ParameterNames.DEPTH_PRED),
+                "normal": self.read_and_transform(path_to_folder, ParameterNames.NORMAL_PRED),
+                "sgs": self.read_and_transform(path_to_folder, ParameterNames.SGS_PRED),
+                "diffuse": self.read_and_transform(path_to_folder, ParameterNames.DIFFUSE_PRED),
+                "specular": self.read_and_transform(path_to_folder, ParameterNames.SPECULAR_PRED),
+                "roughness": self.read_and_transform(path_to_folder, ParameterNames.ROUGHNESS_PRED),
+                "diffuse_gt": self.read_and_transform(path_to_folder, ParameterNames.DIFFUSE),
+                "specular_gt": self.read_and_transform(path_to_folder, ParameterNames.SPECULAR),
+                "roughness_gt": self.read_and_transform(path_to_folder, ParameterNames.ROUGHNESS),
+                "normal_gt": self.read_and_transform(path_to_folder, ParameterNames.NORMAL),
+                "depth_gt": self.read_and_transform(path_to_folder, ParameterNames.DEPTH),
+                "rerender_img": self.read_and_transform(path_to_folder, ParameterNames.RERENDER),
+                "flash": self.read_and_transform(path_to_folder, ParameterNames.INPUT_1_FLASH)
             })
-
-        if self.mode in ["inference", "svbrdf", "joined"]:
-            res.update({
-                # "flash" :       np.transpose(pyexr.open(str(item / "cam1_flash.exr")).get(), (2, 0, 1)), # SHOULD NOT BE USED -> cam1_env and cam1_flash need to be merged! -> use cam1
-                "diffuse": self.read_and_transform(path_to_folder, ParameterNames.DIFFUSE),
-                "specular": self.read_and_transform(path_to_folder, ParameterNames.SPECULAR),
-                "roughness": self.read_and_transform(path_to_folder, ParameterNames.ROUGHNESS)
-            })
-
+        
         if self.storeData:
             self.data[index] = res
 
