@@ -26,12 +26,12 @@ class ParameterNames(Enum):
     INPUT_1_LDR = "cam1.png"
     INPUT_2_LDR = "cam2.png"
     SGS = "sgs.npy"
-    DIFFUSE_PRED = "diffuse-pred%d.png"
-    SPECULAR_PRED = "specular-pred%d.png"
-    ROUGHNESS_PRED = "roughness-pred%d.png"
+    DIFFUSE_PRED = "diffuse_pred%d.png"
+    SPECULAR_PRED = "specular_pred%d.png"
+    ROUGHNESS_PRED = "roughness_pred%d.png"
     NORMAL_PRED = "normal_pred%d.exr"
     DEPTH_PRED = "depth_pred%d.exr"
-    SGS_PRED = "sgs-pred.npy"
+    SGS_PRED = "sgs_pred.npy"
     RERENDER = "rerender%d.exr"
 
 

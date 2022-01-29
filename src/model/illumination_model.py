@@ -229,10 +229,8 @@ class SavePredictionCallback(Callback):
             idx = batch_idx * self.batch_size + img_id
             save_dir = str(self.dataloader.dataset.gen_path(idx)) + "/"
 
-            # save the sgs: TODO!
-            save(sgs[img_id].detach().cpu().numpy(), save_dir + "sgs_pred0.npy")
-            #save_img(normal[img_id], save_dir, "normal_pred0", as_exr=True)
-            #save_img(depth[img_id], save_dir, "depth_pred0", as_exr=True)
+            # save the sgs
+            save(sgs[img_id].detach().cpu().numpy(), save_dir + "sgs_pred.npy")
 
 
 if __name__ == "__main__":
