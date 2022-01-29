@@ -390,7 +390,7 @@ if __name__ == "__main__":
     if train and not resume_training:
         # Training
         model = SVBRDF_Network(device = device)
-    elif train and resume_training:
+    elif (train and resume_training) or infer:
         execution_from_model = "src" in os.getcwd() and "model" in os.getcwd()
         prefix = "../../" if execution_from_model else ""
         path_start = Path(prefix + "lightning_logs")
@@ -399,10 +399,6 @@ if __name__ == "__main__":
         resume_from_checkpoint = str(ckpt_path)
         model = SVBRDF_Network.load_from_checkpoint(
             checkpoint_path=str(ckpt_path))
-    elif infer:
-        model = SVBRDF_Network(device = device)
-        model.load_state_dict(torch.load("src/trained_models/svbrdf_model"))
-        model.eval()
     else:
         exit("Nothing to do! Set 'train' or 'infer' to true!")
 
