@@ -153,7 +153,7 @@ class SVBRDF_Network(pl.LightningModule):
         return (int(pad_top), int(pad_bottom), int(pad_left), int(pad_right))
 
     def forward(self, x):
-        cam1, cam2, mask, normal, depth = x
+        cam1, cam2, mask, normal, depth = x["cam1"], x["cam2"], x["mask"], x["normal"], x["depth"]
         x = torch.cat([cam1, cam2, normal, depth, mask], dim=1)
 
         n_layers = int(log2(self.imgSize) - 2)
@@ -214,7 +214,7 @@ class SVBRDF_Network(pl.LightningModule):
         
     def general_step(self, batch, batch_idx):
         cam1, cam2, mask, normal, depth, sgs = batch["cam1"], batch["cam2"], batch["mask"], batch["normal"], batch["depth"], batch["sgs"]
-        x = cam1, cam2, mask, normal, depth
+        x = batch#cam1, cam2, mask, normal, depth
         gt_diffuse = batch["diffuse"]
         gt_specular = batch["specular"]
         gt_roughness = batch["roughness"]
@@ -355,13 +355,14 @@ class SavePredictionCallback(Callback):
 if __name__ == "__main__":
     print("================ SV-BRDF Network ================")
 
-    # Training:
+    # Execution Params:
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     gpus = 0
     if device == "cuda:0":
         gpus = 1
     batch_size = 3
     num_workers = 0
+    infer_mode = "train"
     overfit = True
     save_model = True
     test_sample = True
@@ -371,25 +372,14 @@ if __name__ == "__main__":
     resume_training_version = 0
     resume_training_ckpt = "epoch=10-step=17016.ckpt"
 
-    # torch.autograd.set_detect_anomaly(True) 
-    trainer = pl.Trainer(
-        weights_summary="full",
-        max_epochs=10,
-        progress_bar_refresh_rate=25,
-        gpus = gpus,
-        profiler="simple",
-    )
-
-    data = TwoShotBrdfDataLightning(mode="svbrdf", overfit=overfit, num_workers=num_workers, batch_size=batch_size)
+    if overfit:
+        infer_mode = "overfit"
 
     model = None
     if train and not resume_training:
         # Training
         model = SVBRDF_Network(device = device)
-        trainer.fit(model, train_dataloaders=data)
-    elif not resume_training:
-        model = SVBRDF_Network(device = device)
-    else:
+    elif train and resume_training:
         execution_from_model = "src" in os.getcwd() and "model" in os.getcwd()
         prefix = "../../" if execution_from_model else ""
         path_start = Path(prefix + "lightning_logs")
@@ -398,7 +388,36 @@ if __name__ == "__main__":
         resume_from_checkpoint = str(ckpt_path)
         model = SVBRDF_Network.load_from_checkpoint(
             checkpoint_path=str(ckpt_path))
+    elif infer:
+        model = SVBRDF_Network(device = device)
+        model.load_state_dict(torch.load("src/trained_models/svbrdf_model"))
+        model.eval()
+    else:
+        exit("Nothing to do! Set 'train' or 'infer' to true!")
 
+    data = TwoShotBrdfDataLightning(mode="svbrdf", overfit=overfit, num_workers=num_workers, batch_size=batch_size)
+    dataloaders = {
+        "train": data.train_dataloader,
+        "val": data.val_dataloader,
+        "test": data.test_dataloader,
+        "overfit": data.val_dataloader,
+    }
+    callbacks = [] if train else [SavePredictionCallback(dataloaders[infer_mode](), infer_mode, batch_size)]
+
+    trainer = pl.Trainer(
+        weights_summary="full",
+        max_epochs=10,
+        progress_bar_refresh_rate=25,
+        gpus = gpus,
+        profiler="simple",
+        callbacks = callbacks
+    )
+
+    if train:
+        trainer.fit(model, train_dataloaders=data)
+    else:
+        trainer.predict(
+            model, dataloaders=dataloaders[infer_mode]())
 
     if save_model:
         if not os.path.exists("src/trained_models/"):
@@ -413,7 +432,13 @@ if __name__ == "__main__":
         normal = torch.unsqueeze(torch.tensor(test_sample["normal"]), dim=0)
         depth = torch.unsqueeze(torch.tensor(test_sample["depth"]), dim=0)
 
-        x = cam1, cam2, mask, normal, depth
+        x = {
+            "cam1": cam1,
+            "cam2": cam2,
+            "mask": mask,
+            "normal": normal,
+            "depth": depth
+        }
         diffuse, specular, roughness = model.forward(x)
 
         diffuse = torch.squeeze(torch.moveaxis(diffuse, 1, 3)).detach().numpy()
