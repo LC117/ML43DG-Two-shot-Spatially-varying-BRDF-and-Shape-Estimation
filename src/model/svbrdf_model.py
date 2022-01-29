@@ -338,6 +338,14 @@ class SavePredictionCallback(Callback):
         """Called when the train batch ends."""
         diffuse, specular, roughness = outputs
 
+        # Create Rerender
+        mask, normal, depth, sgs = batch["mask"], batch["normal"], batch["depth"], batch["sgs"]
+        repeat = [1 for _ in range(len(mask.shape))]
+        repeat[1] = 3
+        mask3 = torch.tile(mask, repeat)
+
+        rendered = pl_module.render(diffuse, specular, roughness, normal, depth, sgs, mask3)
+
         for img_id in range(diffuse.shape[0]):
             idx = batch_idx * self.batch_size + img_id
             save_dir = str(self.dataloader.dataset.gen_path(idx)) + "/"
@@ -346,6 +354,7 @@ class SavePredictionCallback(Callback):
             save_img(diffuse[img_id], save_dir, "diffuse_pred0")
             save_img(specular[img_id], save_dir, "specular_pred0")
             save_img(roughness[img_id], save_dir, "roughness_pred0")
+            save_img(rendered[img_id], save_dir, "rerendered_img")
 
     def on_validation_end(self, trainer, pl_module):
         print("Validation is ending")
