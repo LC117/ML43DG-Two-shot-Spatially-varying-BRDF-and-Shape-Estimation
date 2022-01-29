@@ -333,18 +333,28 @@ class SVBRDF_Network(pl.LightningModule):
 
 if __name__ == "__main__":
     print("================ SV-BRDF Network ================")
+
+    # Training:
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    gpus = 0
+    if device == "cuda:0":
+        gpus = 1
+    batch_size = 3
+    num_workers = 0
+    overfit = True
+
     # Training
-    model = SVBRDF_Network(no_rendering_loss = False, device = "cuda:0" if torch.cuda.is_available() else "cpu")
+    model = SVBRDF_Network(device = device)
     # torch.autograd.set_detect_anomaly(True) 
     trainer = pl.Trainer(
         weights_summary="full",
         max_epochs=10,
-        progress_bar_refresh_rate=25,  # to prevent notebook crashes in Google Colab environments
-        gpus= 1 if torch.cuda.is_available() else 0, # Use GPU if available
+        progress_bar_refresh_rate=25,
+        gpus = gpus,
         profiler="simple",
     )
 
-    data = TwoShotBrdfDataLightning(mode="svbrdf", overfit=True, num_workers=0, batch_size=3)
+    data = TwoShotBrdfDataLightning(mode="svbrdf", overfit=overfit, num_workers=num_workers, batch_size=batch_size)
     trainer.fit(model, train_dataloaders=data)
 
     test_sample = data.train_dataloader().dataset[0]
@@ -360,23 +370,23 @@ if __name__ == "__main__":
     diffuse = torch.squeeze(torch.moveaxis(diffuse, 1, 3)).detach().numpy()
     specular = torch.squeeze(torch.moveaxis(specular, 1, 3)).detach().numpy()
     roughness = np.repeat(torch.squeeze(torch.moveaxis(roughness, 1, 3)).detach().numpy()[..., np.newaxis], 3, 2)
-    if not os.path.exists("TEST_RESULTS/brdf/"):
-        os.makedirs("TEST_RESULTS/brdf/")
+    if not os.path.exists("TEST_SAMPLE/brdf/"):
+        os.makedirs("TEST_SAMPLE/brdf/")
     
     gt_diffuse = np.moveaxis(test_sample["diffuse"], 0, 2)
     gt_specular = np.moveaxis(test_sample["specular"], 0, 2)
     gt_roughness = np.repeat(np.moveaxis(test_sample["roughness"], 0, 2), 3, 2)
 
     # save the diffuse map as rgb using matplotlib
-    plt.imsave("TEST_RESULTS/brdf/diffuse.png", diffuse)
+    plt.imsave("TEST_SAMPLE/brdf/diffuse.png", diffuse)
     # save the specular map as rgb using matplotlib
-    plt.imsave("TEST_RESULTS/brdf/specular.png", specular)
+    plt.imsave("TEST_SAMPLE/brdf/specular.png", specular)
     # save the roughness map using matplotlib
-    plt.imsave("TEST_RESULTS/brdf/roughness.png", roughness, cmap="gray")
+    plt.imsave("TEST_SAMPLE/brdf/roughness.png", roughness, cmap="gray")
 
     # save ground truth
-    plt.imsave("TEST_RESULTS/brdf/diffuse_gt.png", gt_diffuse)
-    plt.imsave("TEST_RESULTS/brdf/specular_gt.png", gt_specular)
-    plt.imsave("TEST_RESULTS/brdf/roughness_gt.png", gt_roughness, cmap="gray")
+    plt.imsave("TEST_SAMPLE/brdf/diffuse_gt.png", gt_diffuse)
+    plt.imsave("TEST_SAMPLE/brdf/specular_gt.png", gt_specular)
+    plt.imsave("TEST_SAMPLE/brdf/roughness_gt.png", gt_roughness, cmap="gray")
 
 
