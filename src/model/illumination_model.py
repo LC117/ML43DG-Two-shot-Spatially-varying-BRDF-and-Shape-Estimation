@@ -101,9 +101,12 @@ class IlluminationNetwork(pl.LightningModule):
         )
 
     def forward(self, x):
-        cam1, cam2, mask, normal, depth = x
+        if len(x) == 5:
+            cam1, cam2, mask, normal, depth = x
+        else:
+            cam1, cam2, mask, normal, depth = x["cam1"], x["cam2"], x["mask"], x["normal_pred"], x["depth_pred"]
 
-        x = torch.cat([cam1, cam2, mask, normal, depth],dim=1)  # shape: (None, 256, 256, 11) = (None, 256, 256, 3+3+1+3+1)
+        x = torch.cat([cam1, cam2, mask, normal, depth], dim=1)  # shape: (None, 256, 256, 11) = (None, 256, 256, 3+3+1+3+1)
 
         x = self.enc_conv2d_block(x)
         x = self.env_map(x)
@@ -227,7 +230,7 @@ class SavePredictionCallback(Callback):
             save_dir = str(self.dataloader.dataset.gen_path(idx)) + "/"
 
             # save the sgs: TODO!
-            save(sgs[img_id], save_dir + "sgs.npy")
+            save(sgs[img_id].detach().cpu().numpy(), save_dir + "sgs_pred0.npy")
             #save_img(normal[img_id], save_dir, "normal_pred0", as_exr=True)
             #save_img(depth[img_id], save_dir, "depth_pred0", as_exr=True)
 
@@ -253,15 +256,14 @@ if __name__ == "__main__":
     numGPUs = torch.cuda.device_count()
     device = "cuda:0" if numGPUs else "cpu"
 
-    train = True
+    train = False
     infer_mode = "overfit"
-    resume_from_checkpoint = None
-    resume_training = False
+    resume_training = True
     batch_size = 8
     num_workers = 0
-    overfit = infer_mode == "overfit"
     epochs = 200
 
+    overfit = infer_mode == "overfit"
     if overfit:
         infer_mode = "overfit"
         batch_size = 5
@@ -269,14 +271,15 @@ if __name__ == "__main__":
     if not train:
         epochs = 1
 
+    resume_from_checkpoint = None
     if resume_training:
         # check if the last to parts of the current execution path are src/model/
-        execution_from_model = "src" in os.getcwd() and "model" in os.getcwd()
+        execution_from_model = ("src" in os.getcwd() and "model" in os.getcwd()) and False
         prefix = "../../" if execution_from_model else ""
 
         path_start = Path(prefix + "lightning_logs")
-        ckpt_path = Path("epoch=10-step=17016.ckpt")
-        ckpt_path = path_start / "version_142" / "checkpoints" / ckpt_path
+        ckpt_path = Path("epoch=199-step=399.ckpt")
+        ckpt_path = path_start / "version_124" / "checkpoints" / ckpt_path
         resume_from_checkpoint = str(ckpt_path)
         model = IlluminationNetwork.load_from_checkpoint(
             checkpoint_path=str(ckpt_path))
@@ -306,10 +309,16 @@ if __name__ == "__main__":
     )
 
     if train:
-        trainer.fit(model, train_dataloaders=data, ckpt_path=resume_from_checkpoint)
+        if resume_training:
+            trainer.fit(model, train_dataloaders=data, ckpt_path=resume_from_checkpoint)
+        else:
+            trainer.fit(model, train_dataloaders=data)
     else:
-        trainer.predict(
-            model, dataloaders=dataloaders[infer_mode](), ckpt_path=resume_from_checkpoint)
+        if resume_training:
+            trainer.predict(
+                model, dataloaders=dataloaders[infer_mode](), ckpt_path=resume_from_checkpoint)
+        else:
+            trainer.predict(model, dataloaders=dataloaders[infer_mode]())
 
     save_model = False
     if save_model:

@@ -37,7 +37,7 @@ class TwoShotBrdfData(Dataset):
         "overfit": "CVPR20-TwoShotBRDFAndShapeDataset/overfit/"
     }
 
-    def __init__(self, split, training, mode="joined", gt = "theirs"):
+    def __init__(self, split, training, mode="joined", use_gt=False):
         """
         :param split: one of 'train', 'val', 'test' or 'overfit' - for training, validation or overfitting split
         :param training: bool -> Set to False for inference, to True for training!
@@ -56,8 +56,7 @@ class TwoShotBrdfData(Dataset):
         self.split = split
         self.storeData = split == "overfit"
         self.data = {}
-        self.gt = gt
-        assert(self.gt in ["ours", "theirs"])
+        self.use_gt = use_gt
 
         self.training = training  # Set to False for inference!
 
@@ -96,7 +95,7 @@ class TwoShotBrdfData(Dataset):
                 "normal": self.read_and_transform(path_to_folder, ParameterNames.NORMAL)
             })
         elif self.mode == "illumination":
-            if self.gt == "theirs":
+            if self.use_gt:
                 res.update({
                     "depth": self.read_and_transform(path_to_folder, ParameterNames.DEPTH),
                     "normal": self.read_and_transform(path_to_folder, ParameterNames.NORMAL),
@@ -109,7 +108,7 @@ class TwoShotBrdfData(Dataset):
                     "sgs": self.read_and_transform(path_to_folder, ParameterNames.SGS)
                 })
         elif self.mode == "svbrdf":
-            if self.gt == "theirs":
+            if self.use_gt:
                 res.update({
                     "depth": self.read_and_transform(path_to_folder, ParameterNames.DEPTH),
                     "normal": self.read_and_transform(path_to_folder, ParameterNames.NORMAL),
