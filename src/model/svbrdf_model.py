@@ -9,6 +9,8 @@ import numpy as np
 from PIL import Image
 
 import pytorch_lightning as pl
+from pytorch_lightning import Callback
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 import torch 
 import torch.nn.functional as F
 from torch.nn.modules.conv import Conv2d
@@ -219,9 +221,6 @@ class SVBRDF_Network(pl.LightningModule):
 
         # Perform a forward pass on the network with inputs
         pred_diffuse, pred_specular, pred_roughness = self.forward(x)
-        # pred_diffuse = out[:, 0:3]
-        # pred_specular = out[:, 3:6]
-        # pred_roughness = torch.unsqueeze(out[:, 6], 1)
 
         loss_function = L1Loss()
 
@@ -233,14 +232,11 @@ class SVBRDF_Network(pl.LightningModule):
             loss = (loss_diffuse + loss_specular + loss_roughness) / 3.0
             return loss
         
-        # TODO With rendering loss!
+        # With rendering loss
         with torch.no_grad(): # Otherwise the losses become nan!
-            # mask = mask[:, 0:1]
             repeat = [1 for _ in range(len(mask.shape))]
             repeat[1] = 3
             mask3 = torch.tile(mask, repeat)
-            
-            # batch_size = cam1.shape[0]
 
             rendered = self.render(pred_diffuse, pred_specular, pred_roughness, normal, depth, sgs, mask3)
 
@@ -248,11 +244,8 @@ class SVBRDF_Network(pl.LightningModule):
             # Image.fromarray(np.uint8(np.transpose(cam1.detach().numpy()[0] * 255, (1, 2, 0)))).show()
             
             rerendered_log_pred = torch.clip(torch.log(1.0 + torch.relu(rendered)), 0.0, 13.0)
-            # rerendered_log = torch.nan_to_num(rerendered_log)
             loss_log_target = torch.clip(torch.log(1.0 + torch.relu(cam1)), 0.0, 13.0)
-            # loss_log = torch.nan_to_num(loss_log)
             
-            # l1_err = loss_function(loss_log, rerendered_log)
             rerendered_loss = masked_loss(rerendered_log_pred, loss_log_target, mask, loss_function)
 
         loss = (loss_diffuse + loss_specular + loss_roughness + rerendered_loss) / 4.0
@@ -286,10 +279,6 @@ class SVBRDF_Network(pl.LightningModule):
         sdiff = apply_mask(diffuse, mask3, "safe_diffuse", undefined=0.5)
         sspec = apply_mask(specular, mask3, "safe_specular", undefined=0.04)
         srogh = apply_mask(roughness, mask3[:, 0:1], "safe_roughness", undefined=0.4)
-
-        # normal_scale_ = torch.moveaxis(torch.ones_like(normal), 1, 3)
-        # normal_scale_ = normal_scale_ * torch.tensor([0.5, 0.5, 1.0], device=self.device__)
-        # normal_scale_ = torch.moveaxis(normal_scale_, 3, 1)
         
         snormal = torch.where(
             torch.less_equal(mask3, 1e-5),
@@ -312,7 +301,6 @@ class SVBRDF_Network(pl.LightningModule):
             device = self.device__
         )
         
-        # sgs_joined = torch.swapaxes(sgs_joined, 1, 2)
         rerendered = renderer.call(
             sdiff,
             sspec,
@@ -326,9 +314,42 @@ class SVBRDF_Network(pl.LightningModule):
             sgs_joined,
         )
         rerendered = apply_mask(rerendered, mask3, "masked_rerender")
-        # rerendered = torch.nan_to_num(rerendered)
         assert not torch.any(rerendered == torch.nan)
         return rerendered
+
+
+class SavePredictionCallback(Callback):
+    def __init__(self, dataloader, mode, batch_size):
+        super().__init__()
+        self.dataloader = dataloader
+        self.mode = mode
+        self.batch_size = batch_size
+
+    def on_predict_batch_end(
+            self,
+            trainer: "pl.Trainer",
+            pl_module: "pl.LightningModule",
+            outputs,
+            batch: Any,
+            batch_idx: int,
+            dataloader_idx: int,
+    ) -> None:
+        """Called when the train batch ends."""
+        diffuse, specular, roughness = outputs
+
+        #for img_id in range(normal.shape[0]):
+        #    idx = batch_idx * self.batch_size + img_id
+        #    save_dir = str(self.dataloader.dataset.gen_path(idx)) + "/"
+        #
+        #    # save the images
+        #    save_img(normal[img_id], save_dir, "normal_pred0", as_exr=True)
+        #    save_img(depth[img_id], save_dir, "depth_pred0", as_exr=True)
+
+    def on_validation_end(self, trainer, pl_module):
+        print("Validation is ending")
+
+    def on_test_end(self, trainer, pl_module):
+        print("Testing is ending")
 
 
 if __name__ == "__main__":
@@ -344,9 +365,12 @@ if __name__ == "__main__":
     overfit = True
     save_model = True
     test_sample = True
+    train = True
+    infer = False
+    resume_training = False
+    resume_training_version = 0
+    resume_training_ckpt = "epoch=10-step=17016.ckpt"
 
-    # Training
-    model = SVBRDF_Network(device = device)
     # torch.autograd.set_detect_anomaly(True) 
     trainer = pl.Trainer(
         weights_summary="full",
@@ -357,7 +381,24 @@ if __name__ == "__main__":
     )
 
     data = TwoShotBrdfDataLightning(mode="svbrdf", overfit=overfit, num_workers=num_workers, batch_size=batch_size)
-    trainer.fit(model, train_dataloaders=data)
+
+    model = None
+    if train and not resume_training:
+        # Training
+        model = SVBRDF_Network(device = device)
+        trainer.fit(model, train_dataloaders=data)
+    elif not resume_training:
+        model = SVBRDF_Network(device = device)
+    else:
+        execution_from_model = "src" in os.getcwd() and "model" in os.getcwd()
+        prefix = "../../" if execution_from_model else ""
+        path_start = Path(prefix + "lightning_logs")
+        ckpt_path = Path(resume_training_ckpt)
+        ckpt_path = path_start / "version_" + str(resume_training_version) / "checkpoints" / ckpt_path
+        resume_from_checkpoint = str(ckpt_path)
+        model = SVBRDF_Network.load_from_checkpoint(
+            checkpoint_path=str(ckpt_path))
+
 
     if save_model:
         if not os.path.exists("src/trained_models/"):
