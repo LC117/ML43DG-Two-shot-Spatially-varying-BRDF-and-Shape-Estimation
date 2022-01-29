@@ -324,7 +324,7 @@ def preresnet_group(
 
     for i in range(0, count):
         # first block doesn't need activation
-        print("chin", ch_in)
+        
         layer, skip_layer = block_func(
             ch_in,
             features,

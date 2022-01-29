@@ -8,12 +8,14 @@ import torch.nn.functional as F
 from matplotlib import pyplot as plt
 from torch import nn
 from math import log2
+from pathlib import Path
 
 import src.utils.rendering_layer as rl
 import src.utils.sg_utils as sg
 from src.data.dataloader_lightning import TwoShotBrdfDataLightning
 from src.utils.common_layers import INReLU, uncompressDepth, div_no_nan, preresnet_group, preresnet_basicblock
 from src.utils.merge_conv import MergeConv
+from src.utils.losses import masked_loss
 
 MAX_VAL = 2
 
@@ -36,13 +38,16 @@ class JointNetwork(pl.LightningModule):
         light_intensity_lumen=45,
         num_sgs=24,
         rendering_loss: bool = False,
-        device = "cpu" #"cuda:0"
+        device = "cuda:0"
     ):
         super().__init__()
         self.base_nf = base_nf
         self.imgSize = imgSize
         self.fov = fov
         self.distance_to_zero = distance_to_zero
+        
+        if not torch.cuda.is_available():
+            device = "cpu"
 
         self.camera_pos = torch.tensor(
             camera_pos.reshape([1, 3]), dtype=torch.float32, device=device)
@@ -72,18 +77,18 @@ class JointNetwork(pl.LightningModule):
         # create layers_needed conv layers with skip connections
         self.encoder_layers = []
         channel_sizes = []
-        in_channels = 90  # 42
+        in_channels = 87 # 90  # 42
         for i in range(layers_needed):
             channel_sizes.append(in_channels)
-            out_channels = min(self.base_nf * (2 ** (i + 1)), 512)
+            out_channels = min(self.base_nf * (2 ** i), 512)
             new_layer = nn.Sequential(
-                torch.nn.ZeroPad2d((1, 2, 1, 2)),
+                # torch.nn.ZeroPad2d((1, 2, 1, 2)),
                 torch.nn.Conv2d(
                     in_channels=in_channels,
                     out_channels=out_channels,
                     kernel_size=4,
                     stride=2,
-                    padding=0
+                    padding=1
                 ),
                 INReLU(out_channels)
             )
@@ -146,6 +151,7 @@ class JointNetwork(pl.LightningModule):
                 kernel_size=5,
                 padding=2),
             torch.nn.Sigmoid())
+        
         decoder_part_layers.append(layer)
         decoder_layers.append(nn.Sequential(*decoder_part_layers))
         decoder_part_layers.clear()
@@ -154,14 +160,30 @@ class JointNetwork(pl.LightningModule):
         return
 
     def forward(self, x):
+        # batch["flash"], batch["mask"], batch["normal"], batch["depth"], batch["sgs"], batch["rerender_img"], batch["roughness"], batch["diffuse"], batch["specular"]
         flash, mask, normal, depth, sgs, rerender_img, roughness, diffuse, specular = x
+        
         onesTensor = torch.ones_like(mask)
         sgs_expanded = sgs.reshape(-1, sgs.shape[1] * sgs.shape[2], 1, 1)
         sgs_to_add = onesTensor * sgs_expanded
-        #print("Shapes", flash.shape, mask.unsqueeze_(3).shape, normal.shape, depth.unsqueeze_(3).shape, sgs_to_add.shape,
-        #      rerender_img.shape, roughness.unsqueeze_(3).shape, diffuse.shape, specular.shape)
-        x = torch.cat([flash, mask, normal, depth, sgs_to_add, rerender_img, roughness, diffuse, specular], dim=1)
+        
+        loss_img = torch.abs(flash - rerender_img) * mask
+        
+        # x = torch.cat([loss_img, diffuse, specular, roughness, normal, depth, mask, sgs], dim=1)
 
+        onesTensor = torch.ones_like(mask)
+        sgs_expanded = torch.reshape(
+            sgs, [-1, sgs.shape[1] * sgs.shape[2], 1, 1]
+        )
+        sgs_to_add = onesTensor * sgs_expanded
+        
+        brdfInput = torch.cat(
+            [loss_img, diffuse, specular, roughness, normal, depth, sgs_to_add, mask],
+            axis=1
+        )
+        
+        x = brdfInput
+        
         skips = []
         for encoder_layer in self.encoder:
             # print("Encoder layer", x.shape)
@@ -180,29 +202,20 @@ class JointNetwork(pl.LightningModule):
                 # print("Concat", x.shape, skips[-1].shape)
                 x = torch.cat([x, skips.pop()], dim=1)
 
-        #print("x shape", x.shape)
-
-        #x = x * mask# + (1 - _mask) * torch.ones_like(x)
-
-        normal = x[:, 0:3, :, :] * 2 - 1
-        normal = normal / torch.norm(normal, dim=1, keepdim=True)
-        normal = (normal * 0.5 + 0.5) * mask
+        diffuse = torch.clamp(x[:, 0:3, :, :], 0.0, 1.0)
+        specular = torch.clamp(x[:, 3:6, :, :], 0.0, 1.0) * mask
+        
+        # Ensure energy conversation
+        diffuse = (diffuse * (1 - specular)) * mask
+        
+        roughness = torch.clamp(x[:, 6:7, :, :], 0.004, 1.0) * mask
+        
+        normal = torch.clamp(x[:, 7:10, :, :], 0.0, 1.0) * mask
 
         # calculate the mean depth of the complete depth image
-        depth = x[:, 3:4, :, :] * mask + (1 - mask)
+        depth = torch.clamp(x[:, 10:11, :, :], 0.0, 1.0) * mask
 
-        roughness = x[:, 4:5, :, :] * mask
-        diffuse = x[:, 5:8, :, :] * mask
-        specular = x[:, 8:11, :, :] * mask
-
-        return normal, depth, roughness, diffuse, specular
-
-    def masked_loss(self, pred, target, mask, loss):
-        _mask = mask
-        pred = pred * _mask
-        target = target * _mask
-        loss = loss(pred, target)
-        return loss
+        return (diffuse, specular, roughness, normal, depth)
 
     def configure_optimizers(self):
         # half learning rate after half of the epochs:
@@ -228,8 +241,7 @@ class JointNetwork(pl.LightningModule):
         #normal_gt, depth_gt = batch["normal"], batch["depth"]#.unsqueeze(-1)
 
         # x = cam1 + mask + normal + depth + sgs + rerender_img + roughness + diffuse + specular
-        batch["rerender_img"] = batch["cam1"]  # TODO: remove this line
-        batch["flash"] = batch["cam2"]  # TODO: remove this line
+        
         #print("batch", batch.keys())
         x = batch["flash"], batch["mask"], batch["normal"], batch["depth"], batch["sgs"], batch["rerender_img"], batch["roughness"], batch["diffuse"], batch["specular"]
         targets = batch["normal"], batch["depth"], batch["roughness"], batch["diffuse"], batch["specular"]
@@ -237,57 +249,27 @@ class JointNetwork(pl.LightningModule):
         # Perform a forward pass on the network with inputs
         normal, depth, roughness, diffuse, specular = self.forward(x)
 
-        #targets = normal_gt, depth_gt.unsqueeze(-1)
-        targets_joined = torch.cat(targets, dim=1)
-
         #loss_img = torch.abs(flash_img - rerender_img)
 
-        diffuse_loss = self.masked_loss(diffuse, batch["diffuse"], mask, torch.nn.L1Loss())
-        specular_loss = self.masked_loss(specular, batch["specular"], mask, torch.nn.L1Loss())
-        roughness_loss = self.masked_loss(roughness, batch["roughness"], mask, torch.nn.L1Loss())
-        normal_loss = self.masked_loss(normal, batch["normal"], mask, torch.nn.L1Loss())
-        depth_loss = self.masked_loss(depth, batch["depth"], mask, torch.nn.L1Loss())
+        diffuse_loss = masked_loss(diffuse, batch["diffuse"], mask, torch.nn.L1Loss())
+        specular_loss = masked_loss(specular, batch["specular"], mask, torch.nn.L1Loss())
+        roughness_loss = masked_loss(roughness, batch["roughness"], mask, torch.nn.L1Loss())
+        normal_loss = masked_loss(normal, batch["normal"], mask, torch.nn.L1Loss())
+        depth_loss = masked_loss(depth, batch["depth"], mask, torch.nn.L1Loss())
 
-        if self.rendering_loss:
+        if self.rendering_loss: # NOT USED IN ORIGINAL
             rendered = self.render(
                 diffuse, specular, roughness, normal, depth, batch["sgs"], mask
             )
 
-            """
-            rerendered_log = tf.clip_by_value(
-                tf.log(1.0 + tf.nn.relu(rendered)), 0.0, 13.0
-            )
-            rerendered_log = tf.check_numerics(
-                rerendered_log, "Rerendered log image contains NaN or Inf"
-            )
-            loss_log = tf.clip_by_value(
-                tf.log(1.0 + tf.nn.relu(flash_img)), 0.0, 13.0
-            )
-            loss_log = tf.check_numerics(
-                loss_log, "The Loss log image contains NaN or Inf"
-            )
-
-            l1_err = l1_loss(loss_log, rerendered_log)
-            rerendered_loss = tf.reduce_mean(
-                masked_loss(l1_err, mask3), name="rendering_loss"
-            )
-            add_moving_summary(rerendered_loss)
-            tf.losses.add_loss(rerendered_loss, tf.GraphKeys.LOSSES)
-            """
-            flash_img = batch["flash_img"] # TODO: I think this is wrong
-
             rerendered_log = torch.nn.functional.relu(rendered)
             # clip the rerendered log between 0 and 13
             rerendered_log = torch.clamp(torch.log(1.0 + rerendered_log), 0.0, 13.0)
+            
+            loss_log = torch.clamp(torch.log(1.0 + batch["flash"]), 0.0, 13.0)
 
+            rendered_loss = masked_loss(rerendered_log, loss_log, mask, torch.nn.L1Loss())
 
-
-            loss_log = torch.nn.functional.relu(flash_img)
-            # clip the loss log between 0 and 13
-            loss_log = torch.clamp(torch.log(1.0 + loss_log), 0.0, 13.0)
-
-        #shape_loss = torch.nn.MSELoss()(out, targets_joined)
-        #shape_loss = self.masked_loss(out, targets_joined, mask, torch.nn.MSELoss())
 
         shape_loss = diffuse_loss + specular_loss + roughness_loss + normal_loss + depth_loss
 
@@ -340,19 +322,51 @@ class JointNetwork(pl.LightningModule):
 
 if __name__ == "__main__":
     # Training:
+    
+    numGPUs = torch.cuda.device_count()
+    device = "cuda:0" if numGPUs else "cpu"
 
-    model = JointNetwork(rendering_loss=False)
+    train = False
+    infer_mode = "overfit"
+    resume_training = False
+    batch_size = 8
+    num_workers = 0
+    epochs = 200
+    
+    use_gt = True
+
+    overfit = infer_mode == "overfit"
+    if overfit:
+        batch_size = 5
+
+    if not train:
+        epochs = 1
+
+    resume_from_checkpoint = None
+    if resume_training:
+        # check if the last to parts of the current execution path are src/model/
+        execution_from_model = ("src" in os.getcwd() and "model" in os.getcwd()) and False
+        prefix = "../../" if execution_from_model else ""
+
+        path_start = Path(prefix + "lightning_logs")
+        ckpt_path = Path("epoch=199-step=399.ckpt")
+        ckpt_path = path_start / "version_124" / "checkpoints" / ckpt_path
+        resume_from_checkpoint = str(ckpt_path)
+        model = JointNetwork.load_from_checkpoint(
+            checkpoint_path=str(ckpt_path))
+    else:
+        model = JointNetwork(rendering_loss=False)
 
     trainer = pl.Trainer(
         # weights_summary="full",
-        max_epochs=150,
+        max_epochs=20,
         progress_bar_refresh_rate=25,  # to prevent notebook crashes in Google Colab environments
         gpus=1 if torch.cuda.is_available() else 0,  # Use GPU if available
         profiler="simple",
         #precision=16,
     )
 
-    data = TwoShotBrdfDataLightning(mode="joined", overfit=True, num_workers=0, batch_size=8) #, persistent_workers=True, pin_memory=True)
+    data = TwoShotBrdfDataLightning(mode="joint", overfit=True, num_workers=0, batch_size=8, use_gt=use_gt) #, persistent_workers=True, pin_memory=True)
 
     trainer.fit(model, train_dataloaders=data)
 
@@ -429,7 +443,7 @@ if __name__ == "__main__":
     plt.imsave("Test_Results/joint/diffuse.png", diffuse, cmap="gray", vmin=0, vmax=1)
 
     # save the specular map using matplotlib
-    plt.imsave("Test_Results/joint/specular.png", specular, cmap="gray", vmin=0, vmax=1)
+    plt.imsave("Test_Results/joint/specular.png", specular[:, :, 0], cmap="gray", vmin=0, vmax=1)
 
 
     print("DONE")

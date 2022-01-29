@@ -27,6 +27,7 @@ summary_writer = None # instantiate only if necessary
 # from tensorflow.python.framework import tensor_shape
 from torchvision.utils import save_image
 from PIL import Image        
+import src.utils.sg_utils as sg
         
 import src.utils.common_layers as cl
 import src.utils.layer_helper as layer_helper
@@ -678,6 +679,25 @@ class RenderingLayer(nn.Module):
 
 
 if __name__ == "__main__":
+    import matplotlib.pyplot as plt
+    
+    
+    sgs = np.load(r"/home/luca/Documents/Master1/ML3D/two_shot_clean/two-shot-brdf-shape/inference_images/examples/0/sgs-pred.npy")
+    sgs_joined = torch.Tensor(np.concatenate([sgs, sg.setup_axis_sharpness(24)], axis=-1))
+    renderer = RenderingLayer(60, 0.7, torch.Size([1, 3, 256, 256]))
+    sg_output = torch.zeros([1, 3, 256, 512])
+    rendered_images = renderer.visualize_sgs(sgs_joined[None, ...], sg_output)
+
+    rendered_images_norm = np.transpose(rendered_images.detach().numpy()[0], (1,2,0))
+    rendered_images_norm /= np.max(rendered_images_norm)
+    # rendered_images_norm = np.uint8(rendered_images_norm * 255 )
+
+    # plt.imsave(result_dir + "sgs.png", np.uint8(rendered_images_norm * 255 ))
+    plt.imsave("sgs_test.png", rendered_images_norm, vmin=0., vmax=1.)
+    
+    
+    
+    
     model =  RenderingLayer(60, 0.7, torch.Size([32, 3, 256, 256]))
     ytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(ytorch_total_params)
