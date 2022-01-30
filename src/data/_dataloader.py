@@ -78,9 +78,12 @@ class TwoShotBrdfData(Dataset):
         res = {}
         
         if self.mode in ["inference", "shape", "illumination", "svbrdf", "joint"]:
+            if self.mode != "joint" or self.use_gt:
+                res.update({
+                    "cam1": self.read_and_transform(path_to_folder, ParameterNames.INPUT_1),
+                    "cam2": self.read_and_transform(path_to_folder, ParameterNames.INPUT_2),
+                })
             res.update({
-                "cam1": self.read_and_transform(path_to_folder, ParameterNames.INPUT_1),
-                "cam2": self.read_and_transform(path_to_folder, ParameterNames.INPUT_2),
                 "mask": self.read_and_transform(path_to_folder, ParameterNames.MASK)
             })
         else:
@@ -241,7 +244,7 @@ class TwoShotBrdfData(Dataset):
 
         elif par_name == ParameterNames.DEPTH_PRED:
             depth = read_image(str(path_to_folder / ParameterNames.DEPTH_PRED.value).replace("%d", "0"), True)
-            depth = compressDepth(depth)
+            # depth = compressDepth(depth)
             return depth[np.newaxis, :, :, 0]
 
         elif par_name == ParameterNames.NORMAL:  # DONE
@@ -267,20 +270,38 @@ class TwoShotBrdfData(Dataset):
             diffuse = read_image(str(path_to_folder / ParameterNames.DIFFUSE.value), False)
             return np.transpose(diffuse, (2, 0, 1))
 
+        elif par_name == ParameterNames.DIFFUSE_PRED:  # DONE
+            diffuse = read_image(str(path_to_folder / ParameterNames.DIFFUSE_PRED.value.replace("%d", "0")), False)
+            return np.transpose(diffuse, (2, 0, 1))
+
         elif par_name == ParameterNames.SPECULAR:  # DONE
             # specular = np.transpose(load_rgb(path_to_folder / "specular.png"), (2, 0, 1))
             specular = read_image(str(path_to_folder / ParameterNames.SPECULAR.value), False)
+            return np.transpose(specular, (2, 0, 1))
+
+        elif par_name == ParameterNames.SPECULAR_PRED:  # DONE
+            # specular = np.transpose(load_rgb(path_to_folder / "specular.png"), (2, 0, 1))
+            specular = read_image(str(path_to_folder / ParameterNames.SPECULAR_PRED.value.replace("%d", "0")), False)
             return np.transpose(specular, (2, 0, 1))
 
         elif par_name == ParameterNames.ROUGHNESS:  # DONE
             # roughness = load_mono(path_to_folder / "roughness.png")[np.newaxis, :, :]
             roughness = read_image(str(path_to_folder / ParameterNames.ROUGHNESS.value), True)
             return roughness[np.newaxis, :, :, 0]
+
+        elif par_name == ParameterNames.ROUGHNESS_PRED:  # DONE
+            # roughness = load_mono(path_to_folder / "roughness.png")[np.newaxis, :, :]
+            roughness = read_image(str(path_to_folder / ParameterNames.ROUGHNESS_PRED.value.replace("%d", "0")), True)
+            return roughness[np.newaxis, :, :, 0]
         
         elif par_name == ParameterNames.INPUT_1_FLASH:
             cam1_flash = read_image(str(path_to_folder / ParameterNames.INPUT_1_FLASH.value), False)
             cam1 = TwoShotBrdfData.process_input_image(cam1_flash)
             return np.transpose(cam1, (2, 0, 1))
+
+        elif par_name == ParameterNames.RERENDER:
+            rerender = read_image(str(path_to_folder / ParameterNames.RERENDER.value.replace("%d", "0")), False)
+            return np.transpose(rerender, (2, 0, 1))
         
         else:
             raise Exception("Parameter name not available!")
