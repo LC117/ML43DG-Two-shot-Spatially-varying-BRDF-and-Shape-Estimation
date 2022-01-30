@@ -239,6 +239,10 @@ class TwoShotBrdfData(Dataset):
             sgs = np.load(path_to_folder / ParameterNames.SGS.value).astype(np.float32)
             return sgs
 
+        elif par_name == ParameterNames.SGS_PRED:  # DONE
+            sgs = np.load(path_to_folder / ParameterNames.SGS_PRED.value).astype(np.float32)
+            return sgs
+
         elif par_name == ParameterNames.DIFFUSE:  # DONE
             # diffuse = np.transpose(load_rgb(path_to_folder / "diffuse.png"), (2, 0, 1))
             diffuse = read_image(str(path_to_folder / ParameterNames.DIFFUSE.value), False)

@@ -374,6 +374,7 @@ if __name__ == "__main__":
     gpus = 0
     if device == "cuda:0":
         gpus = 1
+
     batch_size = 3
     num_workers = 0
     infer_mode = "train"
@@ -405,7 +406,7 @@ if __name__ == "__main__":
     else:
         exit("Nothing to do! Set 'train' or 'infer' to true!")
 
-    data = TwoShotBrdfDataLightning(mode="svbrdf", overfit=overfit, num_workers=num_workers, batch_size=batch_size, use_gt = True)
+    data = TwoShotBrdfDataLightning(mode="svbrdf", overfit=overfit, num_workers=num_workers, batch_size=batch_size, use_gt=False)
     dataloaders = {
         "train": data.train_dataloader,
         "val": data.val_dataloader,
@@ -416,7 +417,7 @@ if __name__ == "__main__":
 
     trainer = pl.Trainer(
         weights_summary="full",
-        max_epochs=10,
+        max_epochs=100,
         progress_bar_refresh_rate=25,
         gpus = gpus,
         profiler="simple",
@@ -424,7 +425,8 @@ if __name__ == "__main__":
     )
 
     if train:
-        trainer.fit(model, train_dataloaders=data)
+        pass
+        #trainer.fit(model, train_dataloaders=data)
     else:
         trainer.predict(
             model, dataloaders=dataloaders[infer_mode]())
@@ -454,6 +456,8 @@ if __name__ == "__main__":
         gt_diffuse = np.moveaxis(test_sample["diffuse"], 0, 2)
         gt_specular = np.moveaxis(test_sample["specular"], 0, 2)
         gt_roughness = np.repeat(np.moveaxis(test_sample["roughness"], 0, 2), 3, 2)
+        depth = np.repeat(np.moveaxis(test_sample["depth"], 0, 2), 3, 2)
+        normal = np.moveaxis(test_sample["normal"], 0, 2)
 
         # save the diffuse map as rgb using matplotlib
         plt.imsave("Test_Results/brdf/diffuse.png", diffuse)
@@ -466,6 +470,8 @@ if __name__ == "__main__":
         plt.imsave("Test_Results/brdf/diffuse_gt.png", gt_diffuse)
         plt.imsave("Test_Results/brdf/specular_gt.png", gt_specular)
         plt.imsave("Test_Results/brdf/roughness_gt.png", gt_roughness, cmap="gray")
+        plt.imsave("Test_Results/brdf/depth.png", depth, cmap="gray")
+        plt.imsave("Test_Results/brdf/normal.png", normal)
     
     print("DONE")
 
