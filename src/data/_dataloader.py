@@ -37,17 +37,17 @@ class TwoShotBrdfData(Dataset):
         "overfit": "CVPR20-TwoShotBRDFAndShapeDataset/overfit/"
     }
 
-    def __init__(self, split, training, mode="joined", use_gt=False):
+    def __init__(self, split, training, mode="joint", use_gt=False):
         """
         :param split: one of 'train', 'val', 'test' or 'overfit' - for training, validation or overfitting split
         :param training: bool -> Set to False for inference, to True for training!
-        :param mode: one of 'inference', 'shape', 'illumination', 'svbrdf'/'joined' - We do not need to load all the data for training the first two networks
+        :param mode: one of 'inference', 'shape', 'illumination', 'svbrdf'/'joint' - We do not need to load all the data for training the first two networks
         :param gt: Ground truth, either use ground truth from the dataset 'theirs', or use predictions from previous passes 'ours'
         """
         super().__init__()
 
         assert split in ["train", "val", "overfit", "test"]
-        assert mode in ["inference", "shape", "illumination", "svbrdf", "joined"]
+        assert mode in ["inference", "shape", "illumination", "svbrdf", "joint"]
         assert not (training and mode == "inference")  # Either one of these, not both
 
         self.items = TwoShotBrdfData.items_subsets[split]
@@ -127,21 +127,40 @@ class TwoShotBrdfData(Dataset):
                     "roughness": self.read_and_transform(path_to_folder, ParameterNames.ROUGHNESS)
                 })
         elif self.mode == "joint":
-            res.update({
-                "depth": self.read_and_transform(path_to_folder, ParameterNames.DEPTH_PRED),
-                "normal": self.read_and_transform(path_to_folder, ParameterNames.NORMAL_PRED),
-                "sgs": self.read_and_transform(path_to_folder, ParameterNames.SGS_PRED),
-                "diffuse": self.read_and_transform(path_to_folder, ParameterNames.DIFFUSE_PRED),
-                "specular": self.read_and_transform(path_to_folder, ParameterNames.SPECULAR_PRED),
-                "roughness": self.read_and_transform(path_to_folder, ParameterNames.ROUGHNESS_PRED),
-                "diffuse_gt": self.read_and_transform(path_to_folder, ParameterNames.DIFFUSE),
-                "specular_gt": self.read_and_transform(path_to_folder, ParameterNames.SPECULAR),
-                "roughness_gt": self.read_and_transform(path_to_folder, ParameterNames.ROUGHNESS),
-                "normal_gt": self.read_and_transform(path_to_folder, ParameterNames.NORMAL),
-                "depth_gt": self.read_and_transform(path_to_folder, ParameterNames.DEPTH),
-                "rerender_img": self.read_and_transform(path_to_folder, ParameterNames.RERENDER),
-                "flash": self.read_and_transform(path_to_folder, ParameterNames.INPUT_1_FLASH)
-            })
+            if self.use_gt:
+                res.update({
+                    "depth": self.read_and_transform(path_to_folder, ParameterNames.DEPTH),
+                    "normal": self.read_and_transform(path_to_folder, ParameterNames.NORMAL),
+                    "sgs": self.read_and_transform(path_to_folder, ParameterNames.SGS),
+                    "diffuse": self.read_and_transform(path_to_folder, ParameterNames.DIFFUSE),
+                    "specular": self.read_and_transform(path_to_folder, ParameterNames.SPECULAR),
+                    "roughness": self.read_and_transform(path_to_folder, ParameterNames.ROUGHNESS),
+                    "diffuse_gt": self.read_and_transform(path_to_folder, ParameterNames.DIFFUSE),
+                    "specular_gt": self.read_and_transform(path_to_folder, ParameterNames.SPECULAR),
+                    "roughness_gt": self.read_and_transform(path_to_folder, ParameterNames.ROUGHNESS),
+                    "normal_gt": self.read_and_transform(path_to_folder, ParameterNames.NORMAL),
+                    "depth_gt": self.read_and_transform(path_to_folder, ParameterNames.DEPTH),
+                    "flash": self.read_and_transform(path_to_folder, ParameterNames.INPUT_1_FLASH)
+                })
+                res.update({
+                    "rerender_img": res["cam1"]
+                })
+            else:
+                res.update({
+                    "depth": self.read_and_transform(path_to_folder, ParameterNames.DEPTH_PRED),
+                    "normal": self.read_and_transform(path_to_folder, ParameterNames.NORMAL_PRED),
+                    "sgs": self.read_and_transform(path_to_folder, ParameterNames.SGS_PRED),
+                    "diffuse": self.read_and_transform(path_to_folder, ParameterNames.DIFFUSE_PRED),
+                    "specular": self.read_and_transform(path_to_folder, ParameterNames.SPECULAR_PRED),
+                    "roughness": self.read_and_transform(path_to_folder, ParameterNames.ROUGHNESS_PRED),
+                    "diffuse_gt": self.read_and_transform(path_to_folder, ParameterNames.DIFFUSE),
+                    "specular_gt": self.read_and_transform(path_to_folder, ParameterNames.SPECULAR),
+                    "roughness_gt": self.read_and_transform(path_to_folder, ParameterNames.ROUGHNESS),
+                    "normal_gt": self.read_and_transform(path_to_folder, ParameterNames.NORMAL),
+                    "depth_gt": self.read_and_transform(path_to_folder, ParameterNames.DEPTH),
+                    "rerender_img": self.read_and_transform(path_to_folder, ParameterNames.RERENDER),
+                    "flash": self.read_and_transform(path_to_folder, ParameterNames.INPUT_1_FLASH)
+                })
         
         if self.storeData:
             self.data[index] = res
@@ -257,6 +276,12 @@ class TwoShotBrdfData(Dataset):
             # roughness = load_mono(path_to_folder / "roughness.png")[np.newaxis, :, :]
             roughness = read_image(str(path_to_folder / ParameterNames.ROUGHNESS.value), True)
             return roughness[np.newaxis, :, :, 0]
+        
+        elif par_name == ParameterNames.INPUT_1_FLASH:
+            cam1_flash = read_image(str(path_to_folder / ParameterNames.INPUT_1_FLASH.value), False)
+            cam1 = TwoShotBrdfData.process_input_image(cam1_flash)
+            return np.transpose(cam1, (2, 0, 1))
+        
         else:
             raise Exception("Parameter name not available!")
 
