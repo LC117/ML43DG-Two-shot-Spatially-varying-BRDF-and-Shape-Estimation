@@ -22,8 +22,6 @@ from src.utils.visualize_tools import save
 from pathlib import Path
 import os
 
-from src.utils.visualize_tools import save_img
-
 MAX_VAL = 2
 
 """
@@ -268,10 +266,10 @@ if __name__ == "__main__":
     numGPUs = torch.cuda.device_count()
     device = "cuda:0" if numGPUs else "cpu"
 
-    train = False
-    save_inference = True
+    train = True
+    save = False
     infer_mode = "train"
-    resume_training = True
+    resume_training = False
     batch_size = 8
     num_workers = 4
     epochs = 200
@@ -287,12 +285,12 @@ if __name__ == "__main__":
     resume_from_checkpoint = None
     if resume_training:
         # check if the last to parts of the current execution path are src/model/
-        execution_from_model = ("src" in os.getcwd() and "model" in os.getcwd()) and False
+        execution_from_model = "src" in os.getcwd() and "model" in os.getcwd()
         prefix = "../../" if execution_from_model else ""
 
         path_start = Path(prefix + "lightning_logs")
-        ckpt_path = Path("epoch=2-step=37124.ckpt")
-        ckpt_path = path_start / "version_169" / "checkpoints" / ckpt_path
+        ckpt_path = Path("epoch=7-step=12375.ckpt")
+        ckpt_path = path_start / "version_155" / "checkpoints" / ckpt_path
         resume_from_checkpoint = str(ckpt_path)
         model = IlluminationNetwork.load_from_checkpoint(
             checkpoint_path=str(ckpt_path))
@@ -310,7 +308,7 @@ if __name__ == "__main__":
     callbacks = [] if train else [SavePredictionCallback(dataloaders[infer_mode](), infer_mode, batch_size)]
 
     early_stop_callback = EarlyStopping(monitor="val_loss", patience=2, mode="min")
-    if save_inference or train:
+    if save or train:
         trainer = pl.Trainer(
             # weights_summary="full",
             max_epochs=epochs if numGPUs else 0,
@@ -328,7 +326,6 @@ if __name__ == "__main__":
             else:
                 trainer.fit(model, train_dataloaders=data)
         else:
-            model.eval()
             if resume_training:
                 trainer.predict(
                     model, dataloaders=dataloaders[infer_mode](), ckpt_path=resume_from_checkpoint)
@@ -344,24 +341,11 @@ if __name__ == "__main__":
             resume_from_checkpoint=resume_from_checkpoint,
         )
 
-    show_model_predictions = False
+    show_model_predictions = True
     if show_model_predictions:
-        import os
-        from pathlib import Path
-        import matplotlib.pyplot as plt
-
-        result_dir = str(Path("Test_Results") / Path("illumination_model")) + "/"
-
-        batch = next(iter(data.val_dataloader()))
-
-        save_img(batch["cam1"], result_dir, "cam1.png")
-        save_img(batch["cam2"], result_dir, "cam2.png")
-        save_img(batch["depth_pred"], result_dir, "depth_pred")
-        save_img(batch["normal_pred"], result_dir, "normal_pred")
-
+        batch = next(iter(data.train_dataloader()))
         x = batch["cam1"], batch["cam2"], batch["mask"], batch["normal_pred"], batch["depth_pred"]
         targets = batch["sgs"]
-        model.eval()
         predictions = model.forward(x)
 
         print("Truths:")
@@ -370,6 +354,7 @@ if __name__ == "__main__":
         print(predictions[0])
 
 
+        result_dir = str(Path("Test_Results") / Path("illumination_model")) + "/"
 
         # create a new folder Test_Results
         # and save the depth and normal maps
