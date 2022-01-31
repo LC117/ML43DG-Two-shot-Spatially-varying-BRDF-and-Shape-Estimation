@@ -9,7 +9,7 @@ from skimage.morphology import disk, erosion
 from src.data.path_handling import path_manager
 from src.utils.images import *
 from src.utils.config import ParameterNames
-from src.utils.preprocessing_utils import read_image, compressDepth, compute_auto_exp
+from src.utils.preprocessing_utils import read_image, compressDepth, compute_auto_exp, read_mask
 
 import pyexr
 
@@ -227,13 +227,7 @@ class TwoShotBrdfData(Dataset):
 
         elif par_name == ParameterNames.MASK:  # DONE
             # mask = load_mono(path_to_folder / ParameterNames.MASK)[np.newaxis, ...]
-            mask = read_image(str(path_to_folder / ParameterNames.MASK.value), True)
-            mask[mask < 0.5] = 0.0
-            mask[mask >= 0.5] = 1.0
-            mask = erosion(
-                mask[..., 0], disk(3)
-            )  # Apply a erosion (channels need to be removed)
-            # mask = np.expand_dims(mask, -1) # And added back
+            mask = read_mask(path_to_folder / ParameterNames.MASK.value)
             return mask[np.newaxis, ...]
 
         elif par_name == ParameterNames.DEPTH:  # DONE

@@ -70,6 +70,14 @@ def read_image(path: str, gray: bool = False) -> np.ndarray:
     else:
         return img.astype(np.float32) / 255
 
+def read_mask(path: str, gray: bool = False) -> np.ndarray:
+    mask = read_image(path, gray)
+    mask[mask < 0.5] = 0.0
+    mask[mask >= 0.5] = 1.0
+    mask = erosion(
+        mask[..., 0], disk(3)
+    )  # Apply a erosion (channels need to be removed)
+    # mask = np.expand_dims(mask, -1) # And added back
 
 def save(
     data: np.ndarray, save_path: str, grayscale: bool = False, alpha: bool = False
