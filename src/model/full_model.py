@@ -3,19 +3,15 @@ import cv2
 import pyexr
 import os
 import pathlib
-import time 
-import tqdm
-import torch
 
 from src.model.shape_model import ShapeNetwork
 from src.model.illumination_model import IlluminationNetwork
 from src.model.svbrdf_model import SVBRDF_Network
-from src.model.joint_model import JointNetwork
 
-from utils.preprocessing_utils import read_image, read_mask
-from utils.preprocessing_utils import sRGBToLinear
+from src.utils.preprocessing_utils import read_image, read_mask
+from src.utils.preprocessing_utils import sRGBToLinear
 
-from utils.inference_renderer import Renderer, InferenceStage
+from src.utils.inference_renderer import Renderer, InferenceStage
 
 
 
@@ -27,7 +23,7 @@ def full_inference(path_to_default_img, path_to_flash, path_to_mask):
     
     default_image =  sRGBToLinear(read_image(path_to_default_img)) # cam2
     flash_image =  sRGBToLinear(read_image(path_to_flash)) # cam1
-    mask = read_mask(path_to_mask)
+    mask = read_mask(path_to_mask, gray=False)
     
     # Pass the Shape Network:
     normal, depth = ShapeNetwork().forward((flash_image, default_image, mask))

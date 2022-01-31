@@ -80,6 +80,7 @@ def read_mask(path: str, gray: bool = True) -> np.ndarray:
         mask[..., 0], disk(3)
     )  # Apply a erosion (channels need to be removed)
     # mask = np.expand_dims(mask, -1) # And added back
+    return mask
 
 def save(
     data: np.ndarray, save_path: str, grayscale: bool = False, alpha: bool = False
