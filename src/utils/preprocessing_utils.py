@@ -82,37 +82,6 @@ def read_mask(path: str, gray: bool = True) -> np.ndarray:
     # mask = np.expand_dims(mask, -1) # And added back
     return mask
 
-def save(
-    data: np.ndarray, save_path: str, grayscale: bool = False, alpha: bool = False
-):
-    """Saves the data to a specified path and handles all required extensions
-    Args:
-        img: The numpy RGB or Grayscale float image with range 0 to 1.
-        save_path: The path the image is saved to.
-        grayscale: True if the image is in grayscale, False if RGB.
-        alpha: True if the image contains transparency, False if opaque 
-    """
-    hdr = _is_hdr(save_path)
-    npy = os.path.splitext(save_path)[1] == ".npy"
-    if hdr:
-        pyexr.write(save_path, data)
-    elif npy:
-        np.save(save_path, data)
-    else:
-        asUint8 = (data * 255).astype(np.uint8)
-        if alpha:
-            if grayscale:
-                print("ALPHA AND GRAYSCALE IS NOT FULLY SUPPORTED")
-            proc = cv2.COLOR_RGBA2BGRA
-        elif not alpha and grayscale:
-            proc = cv2.COLOR_GRAY2BGR
-        else:
-            proc = cv2.COLOR_RGB2BGR
-
-        toSave = cv2.cvtColor(asUint8, proc)
-
-        cv2.imwrite(save_path, toSave)
-
 
 def ensureSingleChannel(x: np.ndarray) -> np.ndarray:
     ret = x

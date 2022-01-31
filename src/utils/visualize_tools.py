@@ -3,7 +3,7 @@ from pathlib import Path
 import os
 import torch
 import numpy as np
-from src.utils.preprocessing_utils import save
+from src.utils.visualize_tools import save
 import pyexr
 import cv2
 from src.utils.preprocessing_utils import read_image, compressDepth, compute_auto_exp, read_mask
@@ -50,7 +50,7 @@ def _is_hdr(path: str) -> bool:
     return ext == ".exr" or ext == ".hdr"  
     
 def save(
-    data: np.ndarray, save_path: str, grayscale: bool = False, alpha: bool = False, also_as_png: bool=True
+    data: np.ndarray, save_path: str, grayscale: bool = False, alpha: bool = False, also_as_png: bool=False
 ):
     """Saves the data to a specified path and handles all required extensions
     Args:

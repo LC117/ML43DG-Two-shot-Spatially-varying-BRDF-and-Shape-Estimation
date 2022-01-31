@@ -17,7 +17,7 @@ import src.utils.rendering_layer as rl
 import src.utils.sg_utils as sg
 from src.data.dataloader_lightning import TwoShotBrdfDataLightning
 from src.utils.common_layers import INReLU
-from src.utils.preprocessing_utils import save
+from src.utils.visualize_tools import save
 
 from pathlib import Path
 import os

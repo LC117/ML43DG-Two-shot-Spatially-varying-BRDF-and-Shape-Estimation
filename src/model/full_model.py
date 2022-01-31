@@ -22,8 +22,8 @@ def full_inference(path_to_default_img, path_to_flash, path_to_mask):
     
     shape_net = ShapeNetwork().load_from_checkpoint(checkpoint_path=str(r"src/data/models/version_142/checkpoints/epoch=10-step=17016.ckpt"))
     ill_net = IlluminationNetwork().load_from_checkpoint(checkpoint_path=str(r"src/data/models/version_169/checkpoints/epoch=2-step=37124.ckpt"))
-    brdf_net = SVBRDF_Network()#.load_from_checkpoint(checkpoint_path=str(r"src/data/models/version_142/checkpoints/epoch=10-step=17016.ckpt"))
-    joint_net = JointNetwork()#.load_from_checkpoint(checkpoint_path=str(r"src/data/models/version_142/checkpoints/epoch=10-step=17016.ckpt"))
+    brdf_net = SVBRDF_Network().load_from_checkpoint(checkpoint_path=str(r"src/data/models/version_158/checkpoints/epoch=2-step=4640.ckpt"))
+    joint_net = JointNetwork()#.load_from_checkpoint(checkpoint_path=str(r"src/data/models/version_155/checkpoints/epoch=7-step=12375.ckpt"))
     
     location = pathlib.Path(path_to_default_img).parent
     assert str(location) == str(pathlib.Path(path_to_flash).parent)
@@ -58,16 +58,25 @@ def full_inference(path_to_default_img, path_to_flash, path_to_mask):
     # Rendering the SVBRDF Output:
     render = Renderer(InferenceStage.INITIAL_RENDERING).render_all(
         data=(diffuse, specular, roughness, normal, depth, mask, sgs))
-    save(tensor_to_savable(render), str(location / f"rerender0.exr"))
+    save(np.transpose(render.detach().numpy(), (1, 2, 0)), str(location / f"rerender0.exr"))
     
     # Pass the Joint Network:
-    x = joint_net.forward()
+    # Loss image etc. is calculated within the joint_net!
+    diffuse, specular, roughness, normal, depth = joint_net.forward((flash_image, mask, normal, depth, sgs, render, roughness, diffuse, specular))
+    save(tensor_to_savable(diffuse), str(location / r"diffuse_pred1.exr"), also_as_png=True)
+    save(tensor_to_savable(specular), str(location / r"specular_pred1.exr"), also_as_png=True)
+    save(tensor_to_savable(roughness), str(location / r"roughness_pred1.exr"), also_as_png=True)
+    save(tensor_to_savable(normal), str(location / r"normal_pred1.exr"), also_as_png=True)
+    save(tensor_to_savable(depth), str(location / r"depth_pred1.exr"), also_as_png=True)
+    # Rendering the FINAL Output:
+    render = Renderer(InferenceStage.INITIAL_RENDERING).render_all(
+        data=(diffuse, specular, roughness, normal, depth, mask, sgs))
+    save(np.transpose(render.detach().numpy(), (1, 2, 0)), str(location / f"rerender_final.exr"))
     
     assert diffuse.max() <= 1. and specular.max() <= 1 and roughness.max() <= 1
     
 def tensor_to_savable(tensor, transpose=True):
     return np.transpose(tensor[0].detach().numpy(), (1, 2, 0))
-
 
 
 if __name__ == "__main__":

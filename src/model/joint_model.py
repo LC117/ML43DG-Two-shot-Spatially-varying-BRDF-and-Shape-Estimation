@@ -259,7 +259,6 @@ class JointNetwork(pl.LightningModule):
 
         # Perform a forward pass on the network with inputs
         diffuse, specular, roughness, normal, depth = self.forward(x)
-        # normal, depth, roughness, diffuse, specular = self.forward(x)
 
         #loss_img = torch.abs(flash_img - rerender_img)
 
@@ -340,13 +339,13 @@ if __name__ == "__main__":
 
     train = True
     save = False
-    use_gt = False
+    use_gt = True
     show_model_predictions = True
     infer_mode = "overfit"
     resume_training = False
     batch_size = 8
     num_workers = 4
-    epochs = 100
+    epochs = 0
 
     overfit = infer_mode == "overfit"
     if overfit:
