@@ -54,22 +54,23 @@ class SVBRDF_Network(pl.LightningModule):
         super().__init__()
 
         self.device__ = device
-        
+        if not torch.cuda.is_available():
+            self.device__ = "cpu"
         self.base_nf = base_nf
         self.imgSize = imgSize
         self.fov = fov
         self.distance_to_zero = distance_to_zero
 
-        self.camera_pos = torch.tensor(camera_pos.reshape([1, 3]), device=device)
-        self.light_pos = torch.tensor(light_pos.reshape([1, 3]), device=device)
+        self.camera_pos = torch.tensor(camera_pos.reshape([1, 3]), device=self.device__)
+        self.light_pos = torch.tensor(light_pos.reshape([1, 3]), device=self.device__)
         intensity = light_intensity_lumen / (4.0 * np.pi)
         light_col = light_color * intensity
-        self.light_col = torch.tensor(light_col.reshape([1, 3]), device=device)
+        self.light_col = torch.tensor(light_col.reshape([1, 3]), device=self.device__)
 
         self.num_sgs = num_sgs
         self.no_rendering_loss = no_rendering_loss
 
-        self.axis_sharpness = torch.tensor(sg.setup_axis_sharpness(self.num_sgs), device=device)
+        self.axis_sharpness = torch.tensor(sg.setup_axis_sharpness(self.num_sgs), device=self.device__)
 
         # Define model
         layers_needed = int(log2(self.imgSize) - 2)
