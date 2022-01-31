@@ -6,7 +6,7 @@ import numpy as np
 from src.utils.preprocessing_utils import save
 
 
-def save_img(img, path, name, use_plt=False, as_exr=False):
+def save_img(img, path, name, use_plt=False, as_exr=False, normalized=True):
     """
     Save image to path
     """
@@ -34,11 +34,21 @@ def save_img(img, path, name, use_plt=False, as_exr=False):
         img = np.squeeze(img, axis=2)
         if use_plt:
             plt.imsave(file_name, img, cmap="gray", vmin=0, vmax=1)
+            #if normalized:
+            #    plt.imsave(file_name, img, cmap="gray", vmin=0, vmax=1)
+            #else:
+            #    plt.imsave(file_name, img, cmap="gray")
+                #save(img, file_name, grayscale=True, alpha=False)
         else:
             save(img, file_name, grayscale=True, alpha=False)
     else:
         if use_plt:
             plt.imsave(file_name, img, vmin=0, vmax=1)
+            #if normalized:
+            #    plt.imsave(file_name, img, vmin=0, vmax=1)
+            #else:
+            #    plt.imsave(file_name, img)
+                #save(img, file_name, grayscale=False, alpha=False)
         else:
             save(img, file_name, grayscale=False, alpha=False)
 
