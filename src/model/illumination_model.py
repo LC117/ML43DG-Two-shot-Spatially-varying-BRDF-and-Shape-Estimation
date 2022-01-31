@@ -101,7 +101,7 @@ class IlluminationNetwork(pl.LightningModule):
         )
 
     def forward(self, x):
-        if len(x) == 5:
+        if type(x) == tuple:
             cam1, cam2, mask, normal, depth = x
         else:
             cam1, cam2, mask, normal, depth = x["cam1"], x["cam2"], x["mask"], x["normal_pred"], x["depth_pred"]
@@ -254,11 +254,12 @@ if __name__ == "__main__":
     numGPUs = torch.cuda.device_count()
     device = "cuda:0" if numGPUs else "cpu"
 
-    train = False
-    infer_mode = "overfit"
-    resume_training = True
+    train = True
+    save = False
+    infer_mode = "train"
+    resume_training = False
     batch_size = 8
-    num_workers = 0
+    num_workers = 4
     epochs = 200
 
     overfit = infer_mode == "overfit"
@@ -272,12 +273,12 @@ if __name__ == "__main__":
     resume_from_checkpoint = None
     if resume_training:
         # check if the last to parts of the current execution path are src/model/
-        execution_from_model = ("src" in os.getcwd() and "model" in os.getcwd()) and False
+        execution_from_model = "src" in os.getcwd() and "model" in os.getcwd()
         prefix = "../../" if execution_from_model else ""
 
         path_start = Path(prefix + "lightning_logs")
-        ckpt_path = Path("epoch=199-step=399.ckpt")
-        ckpt_path = path_start / "version_124" / "checkpoints" / ckpt_path
+        ckpt_path = Path("epoch=7-step=12375.ckpt")
+        ckpt_path = path_start / "version_155" / "checkpoints" / ckpt_path
         resume_from_checkpoint = str(ckpt_path)
         model = IlluminationNetwork.load_from_checkpoint(
             checkpoint_path=str(ckpt_path))
@@ -285,7 +286,7 @@ if __name__ == "__main__":
         model = IlluminationNetwork()
 
     data = TwoShotBrdfDataLightning(mode="illumination", overfit=overfit, num_workers=num_workers, batch_size=batch_size,
-                                    persistent_workers=num_workers > 0, pin_memory=numGPUs > 0, shuffle=train)
+                                    persistent_workers=num_workers > 0, pin_memory=numGPUs > 0, shuffle=train, use_gt=False)
     dataloaders = {
         "train": data.train_dataloader,
         "val": data.val_dataloader,
@@ -295,32 +296,42 @@ if __name__ == "__main__":
     callbacks = [] if train else [SavePredictionCallback(dataloaders[infer_mode](), infer_mode, batch_size)]
 
     early_stop_callback = EarlyStopping(monitor="val_loss", patience=2, mode="min")
-    trainer = pl.Trainer(
-        # weights_summary="full",
-        max_epochs=epochs if numGPUs else 0,
-        progress_bar_refresh_rate=25,  # to prevent notebook crashes in Google Colab environments
-        gpus=numGPUs,  # Use GPU if available
-        profiler="simple",
-        # precision=16,
-        # callbacks=[early_stop_callback]
-        callbacks=callbacks
-    )
+    if save or train:
+        trainer = pl.Trainer(
+            # weights_summary="full",
+            max_epochs=epochs if numGPUs else 0,
+            progress_bar_refresh_rate=25,  # to prevent notebook crashes in Google Colab environments
+            gpus=numGPUs,  # Use GPU if available
+            profiler="simple",
+            # precision=16,
+            # callbacks=[early_stop_callback]
+            callbacks=callbacks
+        )
 
-    if train:
-        if resume_training:
-            trainer.fit(model, train_dataloaders=data, ckpt_path=resume_from_checkpoint)
+        if train:
+            if resume_training:
+                trainer.fit(model, train_dataloaders=data, ckpt_path=resume_from_checkpoint)
+            else:
+                trainer.fit(model, train_dataloaders=data)
         else:
-            trainer.fit(model, train_dataloaders=data)
+            if resume_training:
+                trainer.predict(
+                    model, dataloaders=dataloaders[infer_mode](), ckpt_path=resume_from_checkpoint)
+            else:
+                trainer.predict(model, dataloaders=dataloaders[infer_mode]())
     else:
-        if resume_training:
-            trainer.predict(
-                model, dataloaders=dataloaders[infer_mode](), ckpt_path=resume_from_checkpoint)
-        else:
-            trainer.predict(model, dataloaders=dataloaders[infer_mode]())
+        trainer = pl.Trainer(
+            # weights_summary="full",
+            max_epochs=epochs if numGPUs else 0,
+            progress_bar_refresh_rate=25,  # to prevent notebook crashes in Google Colab environments
+            gpus=numGPUs,  # Use GPU if available
+            profiler="simple",
+            resume_from_checkpoint=resume_from_checkpoint,
+        )
 
-    save_model = False
-    if save_model:
-        batch = list(data.train_dataloader())[0]
+    show_model_predictions = True
+    if show_model_predictions:
+        batch = next(iter(data.train_dataloader()))
         x = batch["cam1"], batch["cam2"], batch["mask"], batch["normal_pred"], batch["depth_pred"]
         targets = batch["sgs"]
         predictions = model.forward(x)
