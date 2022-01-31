@@ -43,9 +43,9 @@ class SVBRDF_Network(pl.LightningModule):
         base_nf : int = 32,
         fov : int = 60,
         distance_to_zero : float = 0.7,
-        camera_pos = np.array([0, 0, 0]),
-        light_pos = np.array([0, 0, 0]),
-        light_color = np.array([1, 1, 1]),
+        camera_pos = np.array([0, 0, 0], dtype=np.float32),
+        light_pos = np.array([0, 0, 0], dtype=np.float32),
+        light_color = np.array([1, 1, 1], dtype=np.float32),
         light_intensity_lumen : int = 45,
         num_sgs : int = 24,
         no_rendering_loss : bool = False,
@@ -382,12 +382,13 @@ if __name__ == "__main__":
     overfit = True
     save_model = False
     test_sample = False
-    train = True
+    train = False
     save_inference = True
     resume_training = False
     resume_training_version = 186
     resume_training_ckpt = "epoch=199-step=399.ckpt"
     epochs = 200
+    use_gt=True
 
     if overfit:
         infer_mode = "overfit"
@@ -411,12 +412,12 @@ if __name__ == "__main__":
         ckpt_path = path_start / f"version_{resume_training_version}" / "checkpoints" / ckpt_path
         resume_from_checkpoint = str(ckpt_path)
         model = SVBRDF_Network.load_from_checkpoint(
-            checkpoint_path=str(ckpt_path))
+            checkpoint_path=str(r"src/data/models/version_158/checkpoints/epoch=2-step=4640.ckpt"))
     else:
         exit("Nothing to do! Set 'train' or 'infer' to true!")
 
-    data = TwoShotBrdfDataLightning(mode="svbrdf", overfit=overfit, num_workers=num_workers, batch_size=batch_size, use_gt=False,
-                                    shuffle=train, use_gt=True)
+    data = TwoShotBrdfDataLightning(mode="svbrdf", overfit=overfit, num_workers=num_workers, batch_size=batch_size, use_gt=use_gt,
+                                    shuffle=train)
     dataloaders = {
         "train": data.train_dataloader,
         "val": data.val_dataloader,

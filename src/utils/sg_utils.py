@@ -29,7 +29,7 @@ def setup_axis_sharpness(num_sgs) -> np.ndarray:
         y = k * off - 1.0 + (off / 2.0)
         r = np.sqrt(1.0 - y * y)
         phi = k * inc
-        axis.append(normalize(np.array([np.cos(phi) * r, np.sin(phi) * r, y])))
+        axis.append(normalize(np.array([np.cos(phi) * r, np.sin(phi) * r, y], dtype=np.float32)))
 
     minDp = 1.0
     for a in axis:
@@ -39,5 +39,5 @@ def setup_axis_sharpness(num_sgs) -> np.ndarray:
     sharpness = (np.log(0.65) * num_sgs) / (minDp - 1.0)
 
     axis = np.stack(axis, 0)  # Shape: num_sgs, 3
-    sharpnessNp = np.ones((num_sgs, 1)) * sharpness
+    sharpnessNp = np.ones((num_sgs, 1), dtype=np.float32) * sharpness
     return np.concatenate([axis, sharpnessNp], -1)

@@ -132,7 +132,7 @@ def center_weight(x):
     idx = np.argwhere(np.ones_like(x))
     idxs = np.reshape(idx, (x.shape[0], x.shape[1], 2))
     center_dist = np.linalg.norm(
-        idxs - np.array([x.shape[0] / 2, x.shape[1] / 2]), axis=2
+        idxs - np.array([x.shape[0] / 2, x.shape[1] / 2], dtype=np.float32), axis=2
     )
 
     return 1 - smoothStep(center_dist / x.shape[1] * 2)
