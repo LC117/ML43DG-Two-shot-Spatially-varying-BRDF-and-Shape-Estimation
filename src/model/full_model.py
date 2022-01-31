@@ -51,7 +51,7 @@ def full_inference(path_to_default_img, path_to_flash, path_to_mask):
     ill_net.render_and_store(sgs[0], path=str(location / r"sgs-pred.png"))
     
     # Pass the SVBRDF Network:
-    diffuse, specular, roughness =brdf_net.forward((flash_image, default_image, mask, normal, depth))
+    diffuse, specular, roughness = brdf_net.forward((flash_image, default_image, mask, normal, depth))
     save(tensor_to_savable(diffuse), str(location / r"diffuse_pred0.exr"), also_as_png=True)
     save(tensor_to_savable(specular), str(location / r"specular_pred0.exr"), also_as_png=True)
     save(tensor_to_savable(roughness), str(location / r"roughness_pred0.exr"), also_as_png=True)
