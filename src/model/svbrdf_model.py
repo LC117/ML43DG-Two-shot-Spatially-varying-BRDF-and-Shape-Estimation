@@ -348,6 +348,11 @@ class SavePredictionCallback(Callback):
         repeat[1] = 3
         mask3 = torch.tile(mask, repeat)
 
+        print("diffuse min max ", torch.min(diffuse), torch.max(diffuse))
+        print("specular min max ", torch.min(specular), torch.max(specular))
+        print("roughness min max ", torch.min(roughness), torch.max(roughness))
+        print("normal min max ", torch.min(normal), torch.max(normal))
+        print("depth min max ", torch.min(depth), torch.max(depth))
         rendered = pl_module.render(diffuse, specular, roughness, normal, depth, sgs, mask3)
 
         for img_id in range(diffuse.shape[0]):
@@ -358,10 +363,10 @@ class SavePredictionCallback(Callback):
             save_img(diffuse[img_id], save_dir, "diffuse_pred0")
             save_img(specular[img_id], save_dir, "specular_pred0")
             save_img(roughness[img_id], save_dir, "roughness_pred0")
+            print(rendered[img_id].shape)
             save_img(rendered[img_id], save_dir, "rerender0", as_exr=True)
             save_img(rendered[img_id], save_dir, "rerender0", as_exr=False, normalized=False)
             print(rendered[img_id].min(), rendered[img_id].max())
-
 
 
 if __name__ == "__main__":
