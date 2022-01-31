@@ -4,6 +4,9 @@ import os
 import torch
 import numpy as np
 from src.utils.preprocessing_utils import save
+import pyexr
+import cv2
+from src.utils.preprocessing_utils import read_image, compressDepth, compute_auto_exp, read_mask
 
 
 def save_img(img, path, name, use_plt=False, as_exr=False):
@@ -42,7 +45,49 @@ def save_img(img, path, name, use_plt=False, as_exr=False):
         else:
             save(img, file_name, grayscale=False, alpha=False)
 
+def _is_hdr(path: str) -> bool:
+    _, ext = os.path.splitext(path)
+    return ext == ".exr" or ext == ".hdr"  
+    
+def save(
+    data: np.ndarray, save_path: str, grayscale: bool = False, alpha: bool = False, also_as_png: bool=True
+):
+    """Saves the data to a specified path and handles all required extensions
+    Args:
+        img: The numpy RGB or Grayscale float image with range 0 to 1.
+        save_path: The path the image is saved to.
+        grayscale: True if the image is in grayscale, False if RGB.
+        alpha: True if the image contains transparency, False if opaque 
+    """
+    hdr = _is_hdr(save_path)
+    npy = os.path.splitext(save_path)[1] == ".npy"
+    if hdr:
+        pyexr.write(save_path, data)
+        if also_as_png:
+            data = cv2.cvtColor(data * 255, cv2.COLOR_RGB2BGR)
+            cv2.imwrite(save_path.split(".")[0] + ".png", data)
+    elif npy:
+        np.save(save_path, data)
+    else:
+        asUint8 = (data * 255).astype(np.uint8)
+        if alpha:
+            if grayscale:
+                print("ALPHA AND GRAYSCALE IS NOT FULLY SUPPORTED")
+            proc = cv2.COLOR_RGBA2BGRA
+        elif not alpha and grayscale:
+            proc = cv2.COLOR_GRAY2BGR
+        else:
+            proc = cv2.COLOR_RGB2BGR
 
+        toSave = cv2.cvtColor(asUint8, proc)
+
+        cv2.imwrite(save_path, toSave)
+        if also_as_png and len(save_path.split(".png")) == 1:
+            cv2.imwrite(save_path.split(".")[0]+".png", toSave)
+            
+            
+            
+            
 """
 # debug the consistency loss
 depth_tensor = torch.Tensor(depth_gt)
@@ -85,3 +130,14 @@ dy = dy.squeeze(0).squeeze(0)
 # save depth_tensor using matplotlib
 # plt.imsave("Test_Results/depth_tensor.png", depth_tensor.detach().cpu().numpy(), cmap="gray")
 """
+
+
+def exr_to_jpg(path):
+    img = read_image(path, False)
+    save(img, path.replace(".exr", ".png"))
+    
+if __name__ == "__main__":
+    exr_to_jpg(r"src/data/CVPR20-TwoShotBRDFAndShapeDataset/overfit/00000/000/cam2.exr")
+    exr_to_jpg(r"src/data/CVPR20-TwoShotBRDFAndShapeDataset/overfit/00000/000/cam1_env.exr")
+    exr_to_jpg(r"src/data/CVPR20-TwoShotBRDFAndShapeDataset/overfit/00000/000/cam1_flash.exr")
+    print("")

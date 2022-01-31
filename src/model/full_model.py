@@ -14,7 +14,7 @@ from src.utils.preprocessing_utils import read_image, read_mask
 from src.utils.preprocessing_utils import sRGBToLinear
 
 from src.utils.inference_renderer import Renderer, InferenceStage
-
+from src.utils.visualize_tools import save
 
 
 
@@ -56,8 +56,9 @@ def full_inference(path_to_default_img, path_to_flash, path_to_mask):
     save(tensor_to_savable(specular), str(location / r"specular_pred0.exr"), also_as_png=True)
     save(tensor_to_savable(roughness), str(location / r"roughness_pred0.exr"), also_as_png=True)
     # Rendering the SVBRDF Output:
-    render = Renderer(InferenceStage.INITIAL_RENDERING).render(data=[(diffuse, specular, roughness, normal, depth, mask, sgs)])
-    save(render, str(location / f"rerender0.exr"))
+    render = Renderer(InferenceStage.INITIAL_RENDERING).render_all(
+        data=(diffuse, specular, roughness, normal, depth, mask, sgs))
+    save(tensor_to_savable(render), str(location / f"rerender0.exr"))
     
     # Pass the Joint Network:
     x = joint_net.forward()
@@ -67,44 +68,7 @@ def full_inference(path_to_default_img, path_to_flash, path_to_mask):
 def tensor_to_savable(tensor, transpose=True):
     return np.transpose(tensor[0].detach().numpy(), (1, 2, 0))
 
-def _is_hdr(path: str) -> bool:
-    _, ext = os.path.splitext(path)
-    return ext == ".exr" or ext == ".hdr"  
-    
-def save(
-    data: np.ndarray, save_path: str, grayscale: bool = False, alpha: bool = False, also_as_png: bool=True
-):
-    """Saves the data to a specified path and handles all required extensions
-    Args:
-        img: The numpy RGB or Grayscale float image with range 0 to 1.
-        save_path: The path the image is saved to.
-        grayscale: True if the image is in grayscale, False if RGB.
-        alpha: True if the image contains transparency, False if opaque 
-    """
-    hdr = _is_hdr(save_path)
-    npy = os.path.splitext(save_path)[1] == ".npy"
-    if hdr:
-        pyexr.write(save_path, data)
-        if also_as_png:
-            cv2.imwrite(save_path.split(".")[0] + ".png", data * 255)
-    elif npy:
-        np.save(save_path, data)
-    else:
-        asUint8 = (data * 255).astype(np.uint8)
-        if alpha:
-            if grayscale:
-                print("ALPHA AND GRAYSCALE IS NOT FULLY SUPPORTED")
-            proc = cv2.COLOR_RGBA2BGRA
-        elif not alpha and grayscale:
-            proc = cv2.COLOR_GRAY2BGR
-        else:
-            proc = cv2.COLOR_RGB2BGR
 
-        toSave = cv2.cvtColor(asUint8, proc)
-
-        cv2.imwrite(save_path, toSave)
-        if also_as_png and len(save_path.split(".png")) == 1:
-            cv2.imwrite(save_path.split(".")[0]+".png", toSave)
 
 if __name__ == "__main__":
     

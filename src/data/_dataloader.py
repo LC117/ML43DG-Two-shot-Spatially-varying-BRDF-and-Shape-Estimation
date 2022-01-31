@@ -225,7 +225,7 @@ class TwoShotBrdfData(Dataset):
 
         elif par_name == ParameterNames.MASK:  # DONE
             # mask = load_mono(path_to_folder / ParameterNames.MASK)[np.newaxis, ...]
-            mask = read_mask(path_to_folder / ParameterNames.MASK.value)
+            mask = read_mask(str(path_to_folder / ParameterNames.MASK.value))
             return mask[np.newaxis, ...]
 
         elif par_name == ParameterNames.DEPTH:  # DONE
