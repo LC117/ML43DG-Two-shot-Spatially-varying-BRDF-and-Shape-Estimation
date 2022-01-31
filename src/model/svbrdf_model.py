@@ -234,8 +234,7 @@ class SVBRDF_Network(pl.LightningModule):
         loss_roughness = loss_function(pred_roughness, gt_roughness)
 
         if self.no_rendering_loss:
-            loss = (loss_diffuse + loss_specular + loss_roughness) / 3.0
-            return loss
+            return (loss_diffuse + loss_specular + loss_roughness) / 3.0
         
         # With rendering loss
         with torch.no_grad(): # Otherwise the losses become nan!
@@ -377,15 +376,15 @@ if __name__ == "__main__":
     if device == "cuda:0":
         numGPUs = 1
 
-    batch_size = 8
+    batch_size = 0
     num_workers = 4
     infer_mode = "validation"
     overfit = True
     save_model = False
     test_sample = False
-    train = False
+    train = True
     save_inference = True
-    resume_training = True
+    resume_training = False
     resume_training_version = 186
     resume_training_ckpt = "epoch=199-step=399.ckpt"
     epochs = 200
@@ -417,7 +416,7 @@ if __name__ == "__main__":
         exit("Nothing to do! Set 'train' or 'infer' to true!")
 
     data = TwoShotBrdfDataLightning(mode="svbrdf", overfit=overfit, num_workers=num_workers, batch_size=batch_size, use_gt=False,
-                                    shuffle=train)
+                                    shuffle=train, use_gt=True)
     dataloaders = {
         "train": data.train_dataloader,
         "val": data.val_dataloader,

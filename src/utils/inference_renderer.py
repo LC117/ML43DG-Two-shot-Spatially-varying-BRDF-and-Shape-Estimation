@@ -102,5 +102,5 @@ if __name__ == "__main__":
         data["diffuse"], data["specular"], data["roughness"], data["normal"], data["depth"], data["mask"], data["sgs"])
     
     render = Renderer(InferenceStage.INITIAL_RENDERING).render_all(data=tuple(torch.Tensor(d)[None, ...] for d in [diffuse, specular, roughness, normal, depth, mask, sgs]))
-    save(tensor_to_savable(render), str(location / f"rerender0.exr"))
+    save(tensor_to_savable(render), str(location / f"rerender0.exr"), also_as_png=True)
     print()
