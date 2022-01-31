@@ -54,10 +54,12 @@ def save_img(img, path, name, use_plt=False, as_exr=False, normalized=True):
         else:
             save(img, file_name, grayscale=False, alpha=False)
 
+
 def _is_hdr(path: str) -> bool:
     _, ext = os.path.splitext(path)
     return ext == ".exr" or ext == ".hdr"  
-    
+
+
 def save(
     data: np.ndarray, save_path: str, grayscale: bool = False, alpha: bool = False, also_as_png: bool=False
 ):
@@ -73,12 +75,12 @@ def save(
     if hdr:
         pyexr.write(save_path, data)
         if also_as_png:
-            data = cv2.cvtColor(data * 255, cv2.COLOR_RGB2BGR)
+            data = cv2.cvtColor((data * 255), cv2.COLOR_RGB2BGR)
             cv2.imwrite(save_path.split(".")[0] + ".png", data)
     elif npy:
         np.save(save_path, data)
     else:
-        asUint8 = (data * 255).astype(np.uint8)
+        asUint8 = (data * 255)  # casting to .astype(np.uint8) creates artifacts in renderer
         if alpha:
             if grayscale:
                 print("ALPHA AND GRAYSCALE IS NOT FULLY SUPPORTED")
