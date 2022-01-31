@@ -348,6 +348,11 @@ class SavePredictionCallback(Callback):
         repeat[1] = 3
         mask3 = torch.tile(mask, repeat)
 
+        print("diffuse min max ", torch.min(diffuse), torch.max(diffuse))
+        print("specular min max ", torch.min(specular), torch.max(specular))
+        print("roughness min max ", torch.min(roughness), torch.max(roughness))
+        print("normal min max ", torch.min(normal), torch.max(normal))
+        print("depth min max ", torch.min(depth), torch.max(depth))
         rendered = pl_module.render(diffuse, specular, roughness, normal, depth, sgs, mask3)
 
         for img_id in range(diffuse.shape[0]):
@@ -358,7 +363,10 @@ class SavePredictionCallback(Callback):
             save_img(diffuse[img_id], save_dir, "diffuse_pred0")
             save_img(specular[img_id], save_dir, "specular_pred0")
             save_img(roughness[img_id], save_dir, "roughness_pred0")
+            print(rendered[img_id].shape)
             save_img(rendered[img_id], save_dir, "rerender0", as_exr=True)
+            save_img(rendered[img_id], save_dir, "rerender0", as_exr=False, normalized=False)
+            print(rendered[img_id].min(), rendered[img_id].max())
 
 
 if __name__ == "__main__":
@@ -366,9 +374,9 @@ if __name__ == "__main__":
 
     # Execution Params:
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    gpus = 0
+    numGPUs = 0
     if device == "cuda:0":
-        gpus = 1
+        numGPUs = 1
 
     batch_size = 8
     num_workers = 4
@@ -377,21 +385,29 @@ if __name__ == "__main__":
     save_model = False
     test_sample = False
     train = False
-    infer = True
+    save_inference = True
     resume_training = True
-    resume_training_version = 158
-    resume_training_ckpt = "epoch=2-step=4640.ckpt"
+    resume_training_version = 186
+    resume_training_ckpt = "epoch=199-step=399.ckpt"
+    epochs = 200
 
     if overfit:
         infer_mode = "overfit"
+        batch_size = 5
+        num_workers = 0
+
+    if not train or save_inference:
+        epochs = 1
 
     model = None
+    resume_from_checkpoint = None
     if train and not resume_training:
         # Training
         model = SVBRDF_Network(device = device)
-    elif (train and resume_training) or infer:
-        execution_from_model = "src" in os.getcwd() and "model" in os.getcwd()
-        prefix = "../../" if execution_from_model else ""
+    elif (train and resume_training) or save_inference:
+        #execution_from_model = "src" in os.getcwd() and "model" in os.getcwd()
+        #prefix = "../../" if execution_from_model else ""
+        prefix = ""
         path_start = Path(prefix + "lightning_logs")
         ckpt_path = Path(resume_training_ckpt)
         ckpt_path = path_start / f"version_{resume_training_version}" / "checkpoints" / ckpt_path
@@ -402,7 +418,7 @@ if __name__ == "__main__":
         exit("Nothing to do! Set 'train' or 'infer' to true!")
 
     data = TwoShotBrdfDataLightning(mode="svbrdf", overfit=overfit, num_workers=num_workers, batch_size=batch_size, use_gt=False,
-                                    shuffle=False)
+                                    shuffle=train)
     dataloaders = {
         "train": data.train_dataloader,
         "val": data.val_dataloader,
@@ -411,21 +427,40 @@ if __name__ == "__main__":
     }
     callbacks = [] if train else [SavePredictionCallback(dataloaders[infer_mode](), infer_mode, batch_size)]
 
-    trainer = pl.Trainer(
-        weights_summary="full",
-        max_epochs=100,
-        progress_bar_refresh_rate=25,
-        gpus = gpus,
-        profiler="simple",
-        callbacks = callbacks
-    )
+    early_stop_callback = EarlyStopping(monitor="val_loss", patience=2, mode="min")
+    if save_inference or train:
+        trainer = pl.Trainer(
+            # weights_summary="full",
+            max_epochs=epochs if numGPUs else 0,
+            progress_bar_refresh_rate=25,  # to prevent notebook crashes in Google Colab environments
+            gpus=numGPUs,  # Use GPU if available
+            profiler="simple",
+            # precision=16,
+            # callbacks=[early_stop_callback]
+            callbacks=callbacks
+        )
 
-    if train:
-        pass
-        #trainer.fit(model, train_dataloaders=data)
+        if train:
+            if resume_training:
+                trainer.fit(model, train_dataloaders=data, ckpt_path=resume_from_checkpoint)
+            else:
+                trainer.fit(model, train_dataloaders=data)
+        else:
+            model.eval()
+            if resume_training:
+                trainer.predict(
+                    model, dataloaders=dataloaders[infer_mode](), ckpt_path=resume_from_checkpoint)
+            else:
+                trainer.predict(model, dataloaders=dataloaders[infer_mode]())
     else:
-        trainer.predict(
-            model, dataloaders=dataloaders[infer_mode]())
+        trainer = pl.Trainer(
+            # weights_summary="full",
+            max_epochs=epochs if numGPUs else 0,
+            progress_bar_refresh_rate=25,  # to prevent notebook crashes in Google Colab environments
+            gpus=numGPUs,  # Use GPU if available
+            profiler="simple",
+            resume_from_checkpoint=resume_from_checkpoint,
+        )
 
     if save_model:
         if not os.path.exists("src/trained_models/"):
@@ -433,6 +468,10 @@ if __name__ == "__main__":
         torch.save(model.state_dict(), "src/trained_models/svbrdf_model")
 
     if test_sample:
+        data = TwoShotBrdfDataLightning(mode="svbrdf", overfit=overfit, num_workers=num_workers, batch_size=batch_size,
+                                        use_gt=False,
+                                        shuffle=False)
+        data.val_dataloader()
         test_sample = next(iter(data.val_dataloader()))
         #test_sample = data.train_dataloader().dataset[0]
         #cam1 = torch.unsqueeze(torch.tensor(test_sample["cam1"]), dim=0)
@@ -443,6 +482,7 @@ if __name__ == "__main__":
 
         x = test_sample
         #x = cam1, cam2, mask, normal, depth
+        model.eval()
         diffuse, specular, roughness = model.forward(x)
 
         #diffuse = torch.squeeze(torch.moveaxis(diffuse, 1, 3)).detach().numpy()
@@ -471,6 +511,14 @@ if __name__ == "__main__":
         save_img(test_sample["roughness"], results_path, "roughness_gt")
         save_img(test_sample["depth"], results_path, "depth")
         save_img(test_sample["normal"], results_path, "normal")
+
+        normal = test_sample["normal"].to(torch.device(device))
+        depth = test_sample["depth"].to(torch.device(device))
+        mask = test_sample["mask"].to(torch.device(device))
+        sgs = test_sample["sgs"].to(torch.device(device))
+        #print(device)
+        #rendered = model.render(diffuse, specular, roughness, normal, depth, sgs, mask)
+        #save_img(rendered, results_path, "rendered")
     
     print("DONE")
 
