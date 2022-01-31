@@ -4,6 +4,10 @@ import torch
 import numpy as np
 import pytorch_lightning as pl
 
+
+import os
+from pathlib import Path
+import matplotlib.pyplot as plt
 from pytorch_lightning import Callback
 from pytorch_lightning.callbacks import EarlyStopping
 from torch import nn
@@ -37,9 +41,7 @@ class IlluminationNetwork(pl.LightningModule):
         self.imgSize = imgSize
         self.base_nf = base_nf
         self.num_sgs = num_sgs  # spherical gaussian
-        device = "cuda:0"
-        if not torch.cuda.is_available():
-            device = "cpu"
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
         self.axis_sharpness = torch.tensor(sg.setup_axis_sharpness(num_sgs), dtype=torch.float32, device=device)
         self.renderer = None
         self.log_images = log_images
@@ -199,7 +201,17 @@ class IlluminationNetwork(pl.LightningModule):
     def set_renderer(self, batch_size):
         if self.renderer is None:
             self.renderer = rl.RenderingLayer(60, 0.7, torch.Size([batch_size, 3, 256, 256]))
+            
+    def render_and_store(self, sgs, path):
+        sgs_joined = torch.cat([sgs, self.axis_sharpness.detach().cpu()], dim=-1)
+        renderer = rl.RenderingLayer(60, 0.7, torch.Size([1, 3, 256, 256]))
+        sg_output = torch.zeros([1, 3, 256, 512])
+        rendered_images = renderer.visualize_sgs(sgs_joined[None, ...], sg_output)
 
+        rendered_images_norm = np.transpose(rendered_images.detach().numpy()[0], (1,2,0))
+        rendered_images_norm /= np.max(rendered_images_norm)
+        
+        plt.imsave(path, rendered_images_norm, vmin=0., vmax=1.)
 
 class SavePredictionCallback(Callback):
     def __init__(self, dataloader, mode, batch_size):
@@ -341,9 +353,6 @@ if __name__ == "__main__":
         print("Prediction:")
         print(predictions[0])
 
-        import os
-        from pathlib import Path
-        import matplotlib.pyplot as plt
 
         result_dir = str(Path("Test_Results") / Path("illumination_model")) + "/"
 
@@ -355,17 +364,7 @@ if __name__ == "__main__":
         for i in range(3):
             # Testing:
             # trainer.test(ckpt_path="best")
-            sgs_joined = torch.cat([predictions[i], model.axis_sharpness.detach().cpu()], dim=-1)
-            renderer = rl.RenderingLayer(60, 0.7, torch.Size([1, 3, 256, 256]))
-            sg_output = torch.zeros([1, 3, 256, 512])
-            rendered_images = renderer.visualize_sgs(sgs_joined[None, ...], sg_output)
 
-            rendered_images_norm = np.transpose(rendered_images.detach().numpy()[0], (1,2,0))
-            rendered_images_norm /= np.max(rendered_images_norm)
-            # rendered_images_norm = np.uint8(rendered_images_norm * 255 )
-
-            # plt.imsave(result_dir + "sgs.png", np.uint8(rendered_images_norm * 255 ))
-            plt.imsave(result_dir + f"sgs_{i}_epochs_{epochs}.png", rendered_images_norm, vmin=0., vmax=1.)
 
             sgs_joined = torch.cat([targets[i], model.axis_sharpness.detach().cpu()], dim=-1)
             renderer = rl.RenderingLayer(60, 0.7, torch.Size([1, 3, 256, 256]))
@@ -379,7 +378,7 @@ if __name__ == "__main__":
             plt.imsave(result_dir + f"sgs_gt_{i}.png", rendered_images_norm, vmin=0., vmax=1. )
 
         for i in range(5):
-
+            IlluminationNetwork.render_and_store(predictions[i], path=result_dir + f"sgs_{i}_epochs_{epochs}.png")
             # 3D Plot:
             # plot the predictions and ground truth in 3d:
             # create a new plot
