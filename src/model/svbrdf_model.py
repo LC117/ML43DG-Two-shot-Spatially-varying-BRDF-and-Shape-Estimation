@@ -30,6 +30,7 @@ from src.utils.rendering_layer import *
 from src.utils.common_layers import *
 from src.utils.losses import masked_loss
 from src.utils.visualize_tools import save_img
+from src.utils.visualize_tools import save
 
 
 class SVBRDF_Network(pl.LightningModule):
@@ -364,6 +365,7 @@ class SavePredictionCallback(Callback):
             save_img(roughness[img_id], save_dir, "roughness_pred0")
             save_img(rendered[img_id], save_dir, "rerender0", as_exr=True)
             save_img(rendered[img_id], save_dir, "rerender0", as_exr=False, normalized=False)
+            save(rendered[0].permute(1,2,0).detach().numpy(), save_dir + "rerender0_fixed.exr", also_as_png=True)
             print(rendered[img_id].min(), rendered[img_id].max())
 
 
