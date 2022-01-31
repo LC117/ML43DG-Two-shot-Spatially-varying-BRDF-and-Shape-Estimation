@@ -363,7 +363,6 @@ class SavePredictionCallback(Callback):
             save_img(diffuse[img_id], save_dir, "diffuse_pred0")
             save_img(specular[img_id], save_dir, "specular_pred0")
             save_img(roughness[img_id], save_dir, "roughness_pred0")
-            print(rendered[img_id].shape)
             save_img(rendered[img_id], save_dir, "rerender0", as_exr=True)
             save_img(rendered[img_id], save_dir, "rerender0", as_exr=False, normalized=False)
             print(rendered[img_id].min(), rendered[img_id].max())
