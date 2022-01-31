@@ -359,12 +359,6 @@ class SavePredictionCallback(Callback):
             save_img(roughness[img_id], save_dir, "roughness_pred0")
             save_img(rendered[img_id], save_dir, "rerender0", as_exr=True)
 
-    def on_validation_end(self, trainer, pl_module):
-        print("Validation is ending")
-
-    def on_test_end(self, trainer, pl_module):
-        print("Testing is ending")
-
 
 if __name__ == "__main__":
     print("================ SV-BRDF Network ================")
@@ -375,17 +369,17 @@ if __name__ == "__main__":
     if device == "cuda:0":
         gpus = 1
 
-    batch_size = 3
-    num_workers = 0
-    infer_mode = "train"
+    batch_size = 8
+    num_workers = 4
+    infer_mode = "validation"
     overfit = True
-    save_model = True
-    test_sample = True
-    train = True
-    infer = False
-    resume_training = False
-    resume_training_version = 5
-    resume_training_ckpt = "epoch=9-step=39.ckpt"
+    save_model = False
+    test_sample = False
+    train = False
+    infer = True
+    resume_training = True
+    resume_training_version = 158
+    resume_training_ckpt = "epoch=2-step=4640.ckpt"
 
     if overfit:
         infer_mode = "overfit"
@@ -406,7 +400,8 @@ if __name__ == "__main__":
     else:
         exit("Nothing to do! Set 'train' or 'infer' to true!")
 
-    data = TwoShotBrdfDataLightning(mode="svbrdf", overfit=overfit, num_workers=num_workers, batch_size=batch_size, use_gt=False)
+    data = TwoShotBrdfDataLightning(mode="svbrdf", overfit=overfit, num_workers=num_workers, batch_size=batch_size, use_gt=False,
+                                    shuffle=False)
     dataloaders = {
         "train": data.train_dataloader,
         "val": data.val_dataloader,
@@ -437,41 +432,44 @@ if __name__ == "__main__":
         torch.save(model.state_dict(), "src/trained_models/svbrdf_model")
 
     if test_sample:
-        test_sample = data.train_dataloader().dataset[0]
-        cam1 = torch.unsqueeze(torch.tensor(test_sample["cam1"]), dim=0)
-        cam2 = torch.unsqueeze(torch.tensor(test_sample["cam2"]), dim=0)
-        mask = torch.unsqueeze(torch.tensor(test_sample["mask"]), dim=0)
-        normal = torch.unsqueeze(torch.tensor(test_sample["normal"]), dim=0)
-        depth = torch.unsqueeze(torch.tensor(test_sample["depth"]), dim=0)
+        test_sample = next(iter(data.val_dataloader()))
+        #test_sample = data.train_dataloader().dataset[0]
+        #cam1 = torch.unsqueeze(torch.tensor(test_sample["cam1"]), dim=0)
+        #cam2 = torch.unsqueeze(torch.tensor(test_sample["cam2"]), dim=0)
+        #mask = torch.unsqueeze(torch.tensor(test_sample["mask"]), dim=0)
+        #normal = torch.unsqueeze(torch.tensor(test_sample["normal"]), dim=0)
+        #depth = torch.unsqueeze(torch.tensor(test_sample["depth"]), dim=0)
 
-        x = cam1, cam2, mask, normal, depth
+        x = test_sample
+        #x = cam1, cam2, mask, normal, depth
         diffuse, specular, roughness = model.forward(x)
 
-        diffuse = torch.squeeze(torch.moveaxis(diffuse, 1, 3)).detach().numpy()
-        specular = torch.squeeze(torch.moveaxis(specular, 1, 3)).detach().numpy()
-        roughness = np.repeat(torch.squeeze(torch.moveaxis(roughness, 1, 3)).detach().numpy()[..., np.newaxis], 3, 2)
-        if not os.path.exists("Test_Results/brdf/"):
-            os.makedirs("Test_Results/brdf/")
+        #diffuse = torch.squeeze(torch.moveaxis(diffuse, 1, 3)).detach().numpy()
+        #specular = torch.squeeze(torch.moveaxis(specular, 1, 3)).detach().numpy()
+        #roughness = np.repeat(torch.squeeze(torch.moveaxis(roughness, 1, 3)).detach().numpy()[..., np.newaxis], 3, 2)
+        results_path = "Test_Results/brdf/"
+        if not os.path.exists(results_path):
+            os.makedirs(results_path)
     
-        gt_diffuse = np.moveaxis(test_sample["diffuse"], 0, 2)
-        gt_specular = np.moveaxis(test_sample["specular"], 0, 2)
-        gt_roughness = np.repeat(np.moveaxis(test_sample["roughness"], 0, 2), 3, 2)
-        depth = np.repeat(np.moveaxis(test_sample["depth"], 0, 2), 3, 2)
-        normal = np.moveaxis(test_sample["normal"], 0, 2)
+        #gt_diffuse = np.moveaxis(test_sample["diffuse"], 0, 2)
+        #gt_specular = np.moveaxis(test_sample["specular"], 0, 2)
+        #gt_roughness = np.repeat(np.moveaxis(test_sample["roughness"], 0, 2), 3, 2)
+        #depth = np.repeat(np.moveaxis(test_sample["depth"], 0, 2), 3, 2)
+        #normal = np.moveaxis(test_sample["normal"], 0, 2)
 
         # save the diffuse map as rgb using matplotlib
-        plt.imsave("Test_Results/brdf/diffuse.png", diffuse)
+        save_img(diffuse, results_path, "diffuse")
         # save the specular map as rgb using matplotlib
-        plt.imsave("Test_Results/brdf/specular.png", specular)
+        save_img(specular, results_path, "specular")
         # save the roughness map using matplotlib
-        plt.imsave("Test_Results/brdf/roughness.png", roughness, cmap="gray")
+        save_img(roughness, results_path, "roughness")
 
         # save ground truth
-        plt.imsave("Test_Results/brdf/diffuse_gt.png", gt_diffuse)
-        plt.imsave("Test_Results/brdf/specular_gt.png", gt_specular)
-        plt.imsave("Test_Results/brdf/roughness_gt.png", gt_roughness, cmap="gray")
-        plt.imsave("Test_Results/brdf/depth.png", depth, cmap="gray")
-        plt.imsave("Test_Results/brdf/normal.png", normal)
+        save_img(test_sample["diffuse"], results_path, "diffuse_gt")
+        save_img(test_sample["specular"], results_path, "specular_gt")
+        save_img(test_sample["roughness"], results_path, "roughness_gt")
+        save_img(test_sample["depth"], results_path, "depth")
+        save_img(test_sample["normal"], results_path, "normal")
     
     print("DONE")
 

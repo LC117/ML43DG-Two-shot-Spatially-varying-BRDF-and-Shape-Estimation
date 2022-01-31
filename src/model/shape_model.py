@@ -246,16 +246,16 @@ if __name__ == "__main__":
 
     train = False
     infer_mode = "train"
-    resume_from_checkpoint = None
     resume_training = True
     batch_size = 8
-    num_workers = 0
+    num_workers = 4
     overfit = False
 
     if overfit:
         infer_mode = "overfit"
         batch_size = 5
 
+    resume_from_checkpoint = None
     if resume_training:
         # check if the last to parts of the current execution path are src/model/
         execution_from_model = "src" in os.getcwd() and "model" in os.getcwd()
@@ -298,7 +298,7 @@ if __name__ == "__main__":
         trainer.predict(
             model, dataloaders=dataloaders[infer_mode](), ckpt_path=resume_from_checkpoint)
 
-    save_model = False
+    save_model = True
     if save_model:
         test_sample = data.val_dataloader().dataset[0]
 
