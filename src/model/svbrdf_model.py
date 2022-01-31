@@ -280,9 +280,9 @@ class SVBRDF_Network(pl.LightningModule):
         return {"val_loss": avg_loss}
     
     def render(self, diffuse, specular, roughness, normal, depth, sgs, mask3):
-        sdiff = apply_mask(diffuse, mask3, "safe_diffuse", undefined=0.5)
-        sspec = apply_mask(specular, mask3, "safe_specular", undefined=0.04)
-        srogh = apply_mask(roughness, mask3[:, 0:1], "safe_roughness", undefined=0.4)
+        sdiff = apply_mask(diffuse, mask3, undefined=0.5)
+        sspec = apply_mask(specular, mask3, undefined=0.04)
+        srogh = apply_mask(roughness, mask3[:, 0:1], undefined=0.4)
         
         snormal = torch.where(
             torch.less_equal(mask3, 1e-5),
@@ -317,7 +317,7 @@ class SVBRDF_Network(pl.LightningModule):
             self.light_col,
             sgs_joined,
         )
-        rerendered = apply_mask(rerendered, mask3, "masked_rerender")
+        rerendered = apply_mask(rerendered, mask3)
         assert not torch.any(rerendered == torch.nan)
         return rerendered
 

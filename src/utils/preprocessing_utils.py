@@ -20,10 +20,10 @@ import pyexr
 from src.utils.config import *
 
 
-def apply_mask(
-    img: np.ndarray, mask: np.ndarray, undefined: np.ndarray = np.asarray([0, 0, 0])
-):
-    return np.where(mask == 1, img, undefined)
+# def apply_mask(
+#     img: np.ndarray, mask: np.ndarray, undefined: np.ndarray = np.asarray([0, 0, 0])
+# ):
+#     return np.where(mask == 1, img, undefined)
 
 
 def hwcToChw(hwc: np.ndarray) -> np.ndarray:
