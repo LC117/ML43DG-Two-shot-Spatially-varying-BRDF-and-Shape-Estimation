@@ -70,7 +70,7 @@ def read_image(path: str, gray: bool = False) -> np.ndarray:
     else:
         return img.astype(np.float32) / 255
 
-def read_mask(path: str, gray: bool = False) -> np.ndarray:
+def read_mask(path: str, gray: bool = True) -> np.ndarray:
     mask = read_image(path, gray)
     mask[mask < 0.5] = 0.0
     mask[mask >= 0.5] = 1.0
