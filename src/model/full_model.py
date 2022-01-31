@@ -47,7 +47,7 @@ def full_inference(path_to_default_img, path_to_flash, path_to_mask):
     
     # Pass the Illumination Network
     sgs = ill_net.forward((flash_image, default_image, mask, normal, depth))
-    save(sgs[0].detach().numpy(), str(location / r"sgs-pred.npy"))
+    save(sgs[0].detach().cpu().numpy(), str(location / r"sgs-pred.npy"))
     ill_net.render_and_store(sgs[0], path=str(location / r"sgs-pred.png"))
     
     # Pass the SVBRDF Network:
@@ -58,7 +58,7 @@ def full_inference(path_to_default_img, path_to_flash, path_to_mask):
     # Rendering the SVBRDF Output:
     render = Renderer(InferenceStage.INITIAL_RENDERING).render_all(
         data=(diffuse, specular, roughness, normal, depth, mask, sgs))
-    save(np.transpose(render.detach().numpy(), (1, 2, 0)), str(location / f"rerender0.exr"))
+    save(np.transpose(render.detach().cpu().numpy(), (1, 2, 0)), str(location / f"rerender0.exr"))
     
     # Pass the Joint Network:
     # Loss image etc. is calculated within the joint_net!
@@ -71,12 +71,12 @@ def full_inference(path_to_default_img, path_to_flash, path_to_mask):
     # Rendering the FINAL Output:
     render = Renderer(InferenceStage.INITIAL_RENDERING).render_all(
         data=(diffuse, specular, roughness, normal, depth, mask, sgs))
-    save(np.transpose(render.detach().numpy(), (1, 2, 0)), str(location / f"rerender_final.exr"))
+    save(np.transpose(render.detach().cpu().numpy(), (1, 2, 0)), str(location / f"rerender_final.exr"))
     
     assert diffuse.max() <= 1. and specular.max() <= 1 and roughness.max() <= 1
     
 def tensor_to_savable(tensor, transpose=True):
-    return np.transpose(tensor[0].detach().numpy(), (1, 2, 0))
+    return np.transpose(tensor[0].detach().cpu().numpy(), (1, 2, 0))
 
 
 if __name__ == "__main__":
