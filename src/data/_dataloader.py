@@ -4,8 +4,6 @@ import trimesh
 
 from torch.utils.data import Dataset
 from typing import Tuple
-from skimage.morphology import disk, erosion
-
 from src.data.path_handling import path_manager
 from src.utils.images import *
 from src.utils.config import ParameterNames

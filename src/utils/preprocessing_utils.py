@@ -16,6 +16,8 @@ import os
 import cv2
 import numpy as np
 import pyexr
+from skimage.morphology import disk, erosion
+
 
 from src.utils.config import *
 
