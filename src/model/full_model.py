@@ -22,7 +22,7 @@ def full_inference(path_to_default_img, path_to_flash, path_to_mask):
     
     shape_net = ShapeNetwork().load_from_checkpoint(checkpoint_path=str(r"src/data/models/version_142/checkpoints/epoch=10-step=17016.ckpt"))
     ill_net = IlluminationNetwork().load_from_checkpoint(checkpoint_path=str(r"src/data/models/version_169/checkpoints/epoch=2-step=37124.ckpt"))
-    brdf_net = SVBRDF_Network().load_from_checkpoint(checkpoint_path=str(r"src/data/models/version_158/checkpoints/epoch=2-step=4640.ckpt"))
+    brdf_net = SVBRDF_Network().load_from_checkpoint(checkpoint_path=str(r"src/data/models/version_184/checkpoints/epoch=3-step=6187.ckpt"))
     joint_net = JointNetwork()#.load_from_checkpoint(checkpoint_path=str(r"src/data/models/version_155/checkpoints/epoch=7-step=12375.ckpt"))
     
     location = pathlib.Path(path_to_default_img).parent
@@ -58,7 +58,7 @@ def full_inference(path_to_default_img, path_to_flash, path_to_mask):
     # Rendering the SVBRDF Output:
     render = Renderer(InferenceStage.INITIAL_RENDERING).render_all(
         data=(diffuse, specular, roughness, normal, depth, mask, sgs))
-    save(np.transpose(render.detach().cpu().numpy(), (1, 2, 0)), str(location / f"rerender0.exr"))
+    save(np.transpose(render.detach().cpu().numpy(), (1, 2, 0)), str(location / f"rerender0.exr"), also_as_png=True)
     
     # Pass the Joint Network:
     # Loss image etc. is calculated within the joint_net!
