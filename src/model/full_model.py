@@ -19,10 +19,11 @@ from src.utils.visualize_tools import save
 
 
 def full_inference(path_to_default_img, path_to_flash, path_to_mask):
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     
-    shape_net = ShapeNetwork().load_from_checkpoint(checkpoint_path=str(r"src/data/models/version_142/checkpoints/epoch=10-step=17016.ckpt"))
+    shape_net = ShapeNetwork(device=device).load_from_checkpoint(checkpoint_path=str(r"src/data/models/version_142/checkpoints/epoch=10-step=17016.ckpt"))
     ill_net = IlluminationNetwork().load_from_checkpoint(checkpoint_path=str(r"src/data/models/version_169/checkpoints/epoch=2-step=37124.ckpt"))
-    brdf_net = SVBRDF_Network().load_from_checkpoint(checkpoint_path=str(r"src/data/models/version_158/checkpoints/epoch=2-step=4640.ckpt"))
+    brdf_net = SVBRDF_Network().load_from_checkpoint(checkpoint_path=str(r"src/data/models/version_222/checkpoints/epoch=3-step=66667.ckpt"))
     joint_net = JointNetwork()#.load_from_checkpoint(checkpoint_path=str(r"src/data/models/version_155/checkpoints/epoch=7-step=12375.ckpt"))
     
     location = pathlib.Path(path_to_default_img).parent
@@ -32,9 +33,9 @@ def full_inference(path_to_default_img, path_to_flash, path_to_mask):
     flash_image =  sRGBToLinear(read_image(path_to_flash)) # cam1
     mask = read_mask(path_to_mask, gray=False)
     
-    default_image = torch.Tensor(default_image[np.newaxis, ...]).permute(0, 3, 1, 2)
-    flash_image = torch.Tensor(flash_image[np.newaxis, ...]).permute(0, 3, 1, 2)
-    mask = torch.Tensor(mask[np.newaxis, np.newaxis, :, :])
+    default_image = torch.tensor(default_image[np.newaxis, ...], device=device).permute(0, 3, 1, 2)
+    flash_image = torch.tensor(flash_image[np.newaxis, ...], device=device).permute(0, 3, 1, 2)
+    mask = torch.tensor(mask[np.newaxis, np.newaxis, :, :], device=device)
     
     # Pass the Shape Network:
     normal, depth = shape_net.forward((flash_image, default_image, mask))
