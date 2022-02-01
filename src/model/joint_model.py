@@ -262,11 +262,11 @@ class JointNetwork(pl.LightningModule):
 
         #loss_img = torch.abs(flash_img - rerender_img)
 
-        diffuse_loss = masked_loss(diffuse, batch["diffuse" + append_gt], mask, torch.nn.L1Loss())
-        specular_loss = masked_loss(specular, batch["specular" + append_gt], mask, torch.nn.L1Loss())
-        roughness_loss = masked_loss(roughness, batch["roughness" + append_gt], mask, torch.nn.L1Loss())
-        normal_loss = masked_loss(normal, batch["normal" + append_gt], mask, torch.nn.L1Loss())
-        depth_loss = masked_loss(depth, batch["depth" + append_gt], mask, torch.nn.L1Loss())
+        diffuse_loss = masked_loss(diffuse, batch["diffuse_gt"], mask, torch.nn.L1Loss())
+        specular_loss = masked_loss(specular, batch["specular_gt"], mask, torch.nn.L1Loss())
+        roughness_loss = masked_loss(roughness, batch["roughness_gt"], mask, torch.nn.L1Loss())
+        normal_loss = masked_loss(normal, batch["normal_gt"], mask, torch.nn.L1Loss())
+        depth_loss = masked_loss(depth, batch["depth_gt"], mask, torch.nn.L1Loss())
 
         if self.rendering_loss: # NOT USED IN ORIGINAL
             rendered = self.render(
@@ -345,7 +345,7 @@ if __name__ == "__main__":
     resume_training = False
     batch_size = 8
     num_workers = 4
-    epochs = 0
+    epochs = 2
 
     overfit = infer_mode == "overfit"
     if overfit:
