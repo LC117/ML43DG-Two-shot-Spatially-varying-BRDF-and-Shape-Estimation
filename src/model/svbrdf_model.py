@@ -348,11 +348,6 @@ class SavePredictionCallback(Callback):
         repeat[1] = 3
         mask3 = torch.tile(mask, repeat)
 
-        print("diffuse min max ", torch.min(diffuse), torch.max(diffuse))
-        print("specular min max ", torch.min(specular), torch.max(specular))
-        print("roughness min max ", torch.min(roughness), torch.max(roughness))
-        print("normal min max ", torch.min(normal), torch.max(normal))
-        print("depth min max ", torch.min(depth), torch.max(depth))
         rendered = pl_module.render(diffuse, specular, roughness, normal, depth, sgs, mask3)
 
         for img_id in range(diffuse.shape[0]):
@@ -364,9 +359,6 @@ class SavePredictionCallback(Callback):
             save_img(specular[img_id], save_dir, "specular_pred0")
             save_img(roughness[img_id], save_dir, "roughness_pred0")
             save_img(rendered[img_id], save_dir, "rerender0", as_exr=True)
-            save_img(rendered[img_id], save_dir, "rerender0", as_exr=False, normalized=False)
-            save(rendered[0].permute(1,2,0).detach().numpy(), save_dir + "rerender0_fixed.exr", also_as_png=True)
-            print(rendered[img_id].min(), rendered[img_id].max())
 
 
 if __name__ == "__main__":
@@ -378,14 +370,14 @@ if __name__ == "__main__":
     if device == "cuda:0":
         numGPUs = 1
 
-    batch_size = 0
+    batch_size = 8
     num_workers = 4
-    infer_mode = "validation"
-    overfit = True
+    infer_mode = "train"
+    overfit = False
     save_model = False
     test_sample = False
-    train = False
-    save_inference = True
+    train = True
+    save_inference = False
     resume_training = False
     resume_training_version = 186
     resume_training_ckpt = "epoch=199-step=399.ckpt"
@@ -413,8 +405,9 @@ if __name__ == "__main__":
         ckpt_path = Path(resume_training_ckpt)
         ckpt_path = path_start / f"version_{resume_training_version}" / "checkpoints" / ckpt_path
         resume_from_checkpoint = str(ckpt_path)
+        # r"src/data/models/version_158/checkpoints/epoch=2-step=4640.ckpt"
         model = SVBRDF_Network.load_from_checkpoint(
-            checkpoint_path=str(r"src/data/models/version_158/checkpoints/epoch=2-step=4640.ckpt"))
+            checkpoint_path=str(ckpt_path))
     else:
         exit("Nothing to do! Set 'train' or 'infer' to true!")
 

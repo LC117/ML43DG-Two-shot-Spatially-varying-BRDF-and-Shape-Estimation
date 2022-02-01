@@ -339,7 +339,7 @@ if __name__ == "__main__":
 
     train = True
     save = False
-    use_gt = True
+    use_gt = False
     show_model_predictions = True
     infer_mode = "overfit"
     resume_training = False
