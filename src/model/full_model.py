@@ -59,7 +59,7 @@ def full_inference(path_to_default_img, path_to_flash, path_to_mask):
     # Rendering the SVBRDF Output:
     render = Renderer(InferenceStage.INITIAL_RENDERING).render_all(
         data=(diffuse, specular, roughness, normal, depth, mask, sgs))
-    save(np.transpose(render.detach().cpu().numpy(), (1, 2, 0)), str(location / f"rerender0.exr"))
+    save(np.transpose(render.detach().cpu().numpy(), (1, 2, 0)), str(location / f"rerender0.exr"), also_as_png=True)
     
     # Pass the Joint Network:
     # Loss image etc. is calculated within the joint_net!
