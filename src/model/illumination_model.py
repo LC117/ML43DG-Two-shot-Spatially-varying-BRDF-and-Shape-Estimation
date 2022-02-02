@@ -388,7 +388,7 @@ if __name__ == "__main__":
             # create a 3d plot of the targets
             ax = fig.add_subplot(111, projection='3d')
             # plot the targets
-            ax.scatter(targets[i, :, 1], targets[i, :,  1], targets[i, :, 2], c='r', marker='o')
+            ax.scatter(targets[i, :, 0], targets[i, :,  1], targets[i, :, 2], c='r', marker='o')
             # present the plot
             #plt.show()
 
