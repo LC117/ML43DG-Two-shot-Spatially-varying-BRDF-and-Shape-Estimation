@@ -102,7 +102,7 @@ if __name__ == "__main__":
     full_inference(path_to_default_img=r"inference_images/examples/0/cam2.png", 
                    path_to_flash=r"inference_images/examples/0/cam1.png", 
                    path_to_mask=r"inference_images/examples/0/mask.png",
-                   location = pathlib.Path(r"inference_images/examples_for_paper/testing_set")
+                   location = None # pathlib.Path(r"inference_images/examples_for_paper/testing_set")
                    )
     
     # Test Image ours:
