@@ -467,30 +467,14 @@ if __name__ == "__main__":
                                         shuffle=False)
         data.val_dataloader()
         test_sample = next(iter(data.val_dataloader()))
-        #test_sample = data.train_dataloader().dataset[0]
-        #cam1 = torch.unsqueeze(torch.tensor(test_sample["cam1"]), dim=0)
-        #cam2 = torch.unsqueeze(torch.tensor(test_sample["cam2"]), dim=0)
-        #mask = torch.unsqueeze(torch.tensor(test_sample["mask"]), dim=0)
-        #normal = torch.unsqueeze(torch.tensor(test_sample["normal"]), dim=0)
-        #depth = torch.unsqueeze(torch.tensor(test_sample["depth"]), dim=0)
 
         x = test_sample
-        #x = cam1, cam2, mask, normal, depth
         model.eval()
         diffuse, specular, roughness = model.forward(x)
 
-        #diffuse = torch.squeeze(torch.moveaxis(diffuse, 1, 3)).detach().numpy()
-        #specular = torch.squeeze(torch.moveaxis(specular, 1, 3)).detach().numpy()
-        #roughness = np.repeat(torch.squeeze(torch.moveaxis(roughness, 1, 3)).detach().numpy()[..., np.newaxis], 3, 2)
         results_path = "Test_Results/brdf/"
         if not os.path.exists(results_path):
             os.makedirs(results_path)
-    
-        #gt_diffuse = np.moveaxis(test_sample["diffuse"], 0, 2)
-        #gt_specular = np.moveaxis(test_sample["specular"], 0, 2)
-        #gt_roughness = np.repeat(np.moveaxis(test_sample["roughness"], 0, 2), 3, 2)
-        #depth = np.repeat(np.moveaxis(test_sample["depth"], 0, 2), 3, 2)
-        #normal = np.moveaxis(test_sample["normal"], 0, 2)
 
         # save the diffuse map as rgb using matplotlib
         save_img(diffuse, results_path, "diffuse")
@@ -510,9 +494,6 @@ if __name__ == "__main__":
         depth = test_sample["depth"].to(torch.device(device))
         mask = test_sample["mask"].to(torch.device(device))
         sgs = test_sample["sgs"].to(torch.device(device))
-        #print(device)
-        #rendered = model.render(diffuse, specular, roughness, normal, depth, sgs, mask)
-        #save_img(rendered, results_path, "rendered")
     
     print("DONE")
 
