@@ -1,7 +1,14 @@
 # ML43DG-Two-shot-Spatially-varying-BRDF-and-Shape-Estimation
-## A culple of best practices when transcribing from tf to torch:
-- tf.variable_scope("enc") -> please add all these section marked with a comment in the torch code i.e. "# enc:" in this case (if the code is added at another position, add the tag there somewhere)
-- For methods/functions that are ported using the same name: please add a docstring containing "@ DONE" so that one knows this function was already checked. 
+
+## Original Implementation:
+https://github.com/NVlabs/two-shot-brdf-shape
+
+## Original Paper:
+https://arxiv.org/abs/2004.00403
+
+## To run the training: 
+Download the data from https://drive.google.com/file/d/14mou3Va65deimPYE5GtFdK8OS3I0BSzq/view and place into "scr/data" Folder. 
+The trai
 
 
 ## Reference Papers:
